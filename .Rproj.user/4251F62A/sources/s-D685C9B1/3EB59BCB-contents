@@ -1,0 +1,36 @@
+X <- cbind(rep(1, nrow(cdat)))
+X <- as.matrix(X)
+blocks0 <- as.numeric(table(cdat$state))
+
+rho <- 0.99
+mat <- map(blocks0, ~matrix(rep(rho, .x^2), .x, .x)) %>%
+  Matrix::bdiag()
+diag(mat) <- 1
+
+inv <- solve(mat)
+
+w0 <- 1 %*% (solve(t(X) %*% inv %*% X) %*% t(X) %*% inv)
+
+w1 <- (1/(sum(blocks0/((blocks0 -1)*rho + 1))))*(1/((blocks0 - 1)*rho + 1))
+w1 <- unlist(map2(w1, blocks0, ~rep(.x, .y)))
+w1 <- w1/sum(w1)
+
+w2 <- 1/(length(blocks0)*blocks0)
+w2 <- unlist(map2(w2, blocks0, ~rep(.x, .y)))
+w2 <- w2/sum(w2)
+
+sum(w0*cdat$hins_unins_pct_2014)
+sum(w1*cdat$hins_unins_pct_2014)
+sum(w2*cdat$hins_unins_pct_2014)
+
+cdat %>%
+  group_by(state) %>%
+  dplyr::summarize(mean = mean(hins_unins_pct_2014)) %>%
+  dplyr::summarize(mean = mean(mean)) %>%
+  print.data.frame()
+
+
+tibble(
+  
+)
+

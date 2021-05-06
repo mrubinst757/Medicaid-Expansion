@@ -1,0 +1,168 @@
+# program: 07-overlap-analysis.R
+# purpose: run overlap analysis programs
+# author: max rubinstein
+# date modified: december 14, 2020
+
+source("03_Analysis/06_oate-analysis.R")
+
+c1_results_table <- create_result_table(c1_txfx, seest_c1_states, seest_c1_proc)
+c2_results_table <- create_result_table(c2_txfx, seest_c2_states, seest_c2_proc)
+
+all_results <- c1_results_table %>%
+  mutate(data = "c1") %>%
+  bind_rows(c2_results_table %>%  
+              mutate(data = "c2"))
+
+full_oate_table <- all_results %>%
+  select(-weights, -contains("sehat"), -contains("ci"), -status) %>%
+  mutate_at("variables_subset", ~factor(., levels = covariate_group)) %>%
+  mutate_at("variables_subset", ~as.numeric(.) - 1) %>%
+  mutate_at("sigma_estimate", ~factor(., levels = sigma_estimator)) %>%
+  spread(variables_subset, txfx) %>%
+  filter(!grepl("diag", sigma_estimate)) %>%
+  rename(`Sigma estimate` = sigma_estimate, Dataset = data)
+
+table_inference <- all_results %>%
+  mutate(states = paste0("(", round(l95ci1, 2), ", ", round(u95ci1, 2), ")"),
+         proc = paste0("(", round(l95ci2, 2), ", ", round(u95ci2, 2), ")")) %>%
+  select(-contains('ci'), -contains('sehat'), -weights) %>%
+  mutate_at("variables_subset", ~factor(., levels = covariate_group)) %>%
+  mutate_at("variables_subset", ~as.numeric(.) - 1) %>%
+  mutate_at("sigma_estimate", ~factor(., levels = sigma_estimator)) %>%
+  filter(variables_subset == 0) %>%
+  filter(!grepl("diag", sigma_estimate)) %>%
+  rename(Psihat = txfx, `Sigma estimate` = sigma_estimate,
+         `Variables subset` = variables_subset, Dataset = data,
+         `CI (states)` = states, `CI (proc)` = proc) %>%
+  select(-`Variables subset`, -status)
+
+print(xtable::xtable(table_inference), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)
+
+print(xtable::xtable(full_oate_table), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)
+
+# create plots ----------------------------------------------------------------------------------------
+loo_covariates_plot(oate_results_c1$Preferred) +
+  ylim(c(-3.5, 0)) +
+  ggsave(paste0("../../02_Paper/01_Plots/loo-covariates-c1-oate.png"))
+
+loo_covariates_plot(oate_results_c2$`Early Expansion`) +
+  ylim(c(-3.5, 0)) +
+  ggsave(paste0("../../02_Paper/01_Plots/loo-covariates-c2-oate.png"))
+
+process_results(oate_results_c1$Preferred) %>%
+  mutate(subset = "Preferred") %>%
+  bind_rows(
+    process_results(oate_results_c2$`Early Expansion`) %>%
+      mutate(subset = "Early Expansion Removed")
+  ) %>%
+  filter(variables_subset %in% c("None", "Republican")) %>%
+  filter(sigma_estimate != "sigma_avg") %>%
+  ggplot(aes(y = txfx, x = variables_subset, fill = subset)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1", name = "States Included") +
+  ylab("Variables Subset") +
+  xlab("Estimated Contrast") +
+  ggsave(paste0("../../02_Paper/01_Plots/oate-comparison-repub-c1c2.png"))
+
+# leave one out state estimates -----------------------------------------------------------------------
+
+centered(c1_txfx, c1_jackknife_states, covariate_group) #max diff 0.01
+centered(c1_txfx, c1_jackknife_proc, covariate_group) #max diff 0.12
+centered(c2_txfx, c2_jackknife_states, covariate_group) #max diff 0.02
+centered(c2_txfx, c2_jackknife_proc, covariate_group) #max diff 0.12
+
+# what states are the estimates most sensitive to?
+c1_loo_table <- process_loo_data(c1_txfx, c1_jackknife_states, covariate_group) %>%
+  mutate(jackknife = "states") %>%
+  rbind(process_loo_data(c1_txfx, c1_jackknife_proc, covariate_group) %>%
+          mutate(jackknife = "proc"), .) %>%
+  mutate(diff = value - main_estimate) %>%
+  mutate(data = "c1")
+
+c2_loo_table <- process_loo_data(c2_txfx, c2_jackknife_states, covariate_group) %>%
+  mutate(jackknife = "states") %>%
+  rbind(process_loo_data(c2_txfx, c2_jackknife_proc, covariate_group) %>%
+          mutate(jackknife = "proc"), .) %>%
+  mutate(diff = value - main_estimate) %>%
+  mutate(data = "c2")
+
+all_results <- rbind(c1_loo_table, c2_loo_table)
+
+all_results %>%
+  filter(variables_subset %in% c("None", "Republican"),
+         sigma_estimate == "sigma_uu_i_modeled",
+         jackknife == "states") %>%
+  mutate_at("data", ~stringr::str_replace_all(., c("c1" = "Primary Dataset",
+                                                   "c2" = "Early Expansion Excluded"))) %>%
+  mutate_at("data", ~factor(., levels = c("Primary Dataset", "Early Expansion Excluded"))) %>%
+  ggplot(aes(x = variables_subset, y = key, fill = diff)) +
+  geom_tile() +
+  scale_fill_gradient2(low = muted("red"), mid = "white", high = muted("blue"),
+                       name = "Difference \n (excl - orig)") +
+  facet_wrap(~data) +
+  ylab("") +
+  xlab("Variables Excluded") +
+  theme_minimal() +
+  ggsave(paste0("../../02_Paper/01_Plots/oate-loo-state-cov-group-heatmap-states.png"))
+
+all_results %>%
+  filter(variables_subset %in% c("None", "Republican"), 
+         sigma_estimate == "sigma_uu_i_modeled",
+         jackknife == "proc") %>%
+  mutate_at("data", ~stringr::str_replace_all(., c("c1" = "Primary Dataset",
+                                                   "c2" = "Early Expansion Excluded"))) %>%
+  mutate_at("data", ~factor(., levels = c("Primary Dataset", "Early Expansion Excluded"))) %>%
+  ggplot(aes(x = variables_subset, y = key, fill = diff)) +
+  geom_tile() +
+  facet_wrap(~data) +
+  scale_fill_gradient2(low = muted("blue"), mid = "white", high = muted("red"),
+                       name = "Difference \n (excl - orig)") +
+  ylab("") +
+  xlab("Variables Excluded") +
+  theme_minimal() +
+  ggsave(paste0("../../02_Paper/01_Plots/oate-loo-state-cov-group-heatmap-proc.png"))
+
+repub_diff <- all_results %>%
+  filter(variables_subset %in% c("None", "Republican")) %>%
+  group_by(sigma_estimate, key, data, jackknife) %>%
+  mutate(diff_jck  = value[variables_subset == "Republican"] - value[variables_subset == "None"]) %>%
+  distinct(sigma_estimate, data, jackknife, diff_jck) 
+
+rdiff_inftable <- repub_diff %>%
+  left_join(orig_data, by = c("key" = "state")) %>%
+  group_by(sigma_estimate, data, jackknife, treatment) %>%
+  mutate(sq_error = (diff_jck - mean(diff_jck))^2) %>%
+  dplyr::summarize(var_est = ((n() - 1)/n())*mean(sq_error)) %>%
+  group_by(sigma_estimate, data, jackknife) %>% 
+  dplyr::summarize(se_est = sqrt(sum(var_est))) %>%
+  left_join(
+    map2(list(c1_txfx, c2_txfx), c("c1", "c2"), ~.x %>%
+           select(-weights) %>%
+           filter(variables_subset %in% c("None", "Republican")) %>%
+           group_by(sigma_estimate) %>%
+           mutate(diff = txfx[variables_subset == "Republican"] - txfx[variables_subset == "None"]) %>%
+           distinct(sigma_estimate, diff) %>%
+           mutate(data = .y)) %>%
+      invoke(rbind, .)
+  ) %>%
+  mutate(l95ci = diff - 1.96*se_est, u95ci = diff + 1.96*se_est) %>%
+  mutate(CI = paste0("(", round(l95ci, 2), ", ", round(u95ci, 2), ")")) %>%
+  select(-se_est, -contains("95")) %>%
+  spread(jackknife, CI) %>%
+  filter(!grepl("diag", sigma_estimate)) %>%
+  mutate_at("sigma_estimate", ~factor(., sigma_estimator)) %>%
+  select(`Sigma estimate` = sigma_estimate,
+         Dataset = data,
+         Difference = diff,
+         `CI (states)` = states,
+         `CI (proc)` = proc) %>%
+  arrange(`Sigma estimate`)
+
+print(xtable::xtable(rdiff_inftable), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)

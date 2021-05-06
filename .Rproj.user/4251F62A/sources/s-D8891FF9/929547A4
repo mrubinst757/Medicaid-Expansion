@@ -1,0 +1,26 @@
+{
+    "id": "929547A4",
+    "path": "C:/Users/mdrub/Box/Medicaid-Project/01_Programs/03_RPrograms/03_Analysis/run-programs/04-summary-statistics.R",
+    "project_path": "03_Analysis/run-programs/04-summary-statistics.R",
+    "type": "r_source",
+    "hash": "1475890227",
+    "contents": "",
+    "dirty": false,
+    "created": 1616003100977.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "236,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1617307197,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1617307197838,
+    "read_only": false,
+    "read_only_alternatives": []
+}

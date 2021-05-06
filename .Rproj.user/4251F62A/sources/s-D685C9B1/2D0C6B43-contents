@@ -1,0 +1,38 @@
+expit <- function(x) exp(x)/(1 + exp(x))
+
+data <- tibble(
+  X = rnorm(10000, 100, 1),
+  pi = expit(X - 100),
+  A = rbinom(10000, 1, 0.5),
+  Y = rnorm(10000, 0, 1)
+)
+
+
+
+sim <- function(seed = NULL) {
+#  set.seed(seed)
+  X = rnorm(100, 0, 1)
+  set.seed(NULL)
+  Y = X + rnorm(100, 0, sqrt(0.1))
+  m1 <- lm(Y ~ X)
+  est <- c(1, 1) %*% coef(m1)
+  seest <- sqrt(c(1, 1) %*% vcov(m1) %*% c(1, 1))
+  coverage <- (est - 1.96*seest < 1) & (est + 1.96*seest > 1)
+  c(coverage, est, seest)
+}
+
+sqrt(500^{-2/3})
+
+t1 <- map(1:1000, ~sim(15)) 
+t2 <- map(1:1000, ~sim(NULL))
+
+t1 %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  dplyr::summarize(coverage = mean(V1), empvar = var(V2), meanvarest = mean(V3))
+
+t2 %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  dplyr::summarize(coverage = mean(V1), empvar = var(V2), meanvarest = mean(V3))
+

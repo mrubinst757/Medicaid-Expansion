@@ -1,0 +1,25 @@
+data <- imputed_dat_c1 %>%
+  unnest() %>%
+  filter(key == "sigma_zero") 
+
+cvariables <- variables[-grep("repub_total_control", variables)]
+
+model_formula0 <- gsub("repub_total_control+", "", model_formula)
+m0 <- lm(as.formula(model_formula0), subset(data, treatment == 0))
+model_formula1 <- gsub("repub_lower_control+|repub_gov+", "", model_formula0)
+m1 <- lm(as.formula(model_formula1), subset(data, treatment == 0))
+
+m2 <- lm(as.formula(model_formula0), subset(data, treatment == 1))
+m3 <- lm(as.formula(model_formula1), subset(data, treatment == 1))
+
+x0 <- colMeans(subset(data, treatment == 0)[variables])
+x1 <- colMeans(subset(data, treatment == 1)[variables])
+
+mean(subset(data, treatment == 1)$hins_unins_pct_2014) - c(1, x1) %*% coef(m0)
+c(1, x0) %*% coef(m1) - mean(subset(data, treatment == 0)$hins_unins_pct_2014)
+summary(m0)
+
+anova(m0, m1)
+anova(m2, m3)
+
+remotes::install_github("mrubinst757/synth")

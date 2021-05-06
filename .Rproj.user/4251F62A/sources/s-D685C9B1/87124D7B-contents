@@ -1,0 +1,43 @@
+sim <- function() {
+  dat <- tibble(
+    x = rnorm(100, 100, 2),
+    v = rnorm(100, 0, 1),
+    p = rexp(100, 0.0125),
+    v1 = v/sqrt(p),
+    w = x + v1
+  )
+  
+  m1 <- lm(x ~ w, dat)
+  m2 <- lm(x ~ w, dat, weights = p)
+  
+  dat1 <- tibble(
+    x = rnorm(100, 100, 2),
+    v = rnorm(100, 0, 1),
+    p = rexp(100, 0.125),
+    v1 = v/sqrt(p),
+    w = x + v1
+  )
+  mse1 <- mean((dat1$x - predict(m1, dat1))^2)
+  mse2 <- mean((dat1$x - predict(m2, dat1))^2)
+  
+#  c(mse1, mse2, mean(dat1$x), mean(dat1$w))
+  c(coef(m1)[2], coef(m2)[2])
+}
+
+map(1:100, ~sim()) %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  summarize_all(var) %>%
+  print.data.frame()
+
+dat <- tibble(
+  x = rnorm(100, 100, 2),
+  v = rnorm(100, 0, 1),
+  p = rexp(100, 0.0125),
+  v1 = v/sqrt(p),
+  w = x + v1
+)
+
+hist(dat$p)
+hist(dat$v1)
+plot(dat$p, dat$v1)

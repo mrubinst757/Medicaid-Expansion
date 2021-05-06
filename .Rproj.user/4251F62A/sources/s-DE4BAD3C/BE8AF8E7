@@ -1,0 +1,26 @@
+{
+    "id": "BE8AF8E7",
+    "path": "C:/Users/mdrub/Box/Medicaid-Project/01_Programs/03_RPrograms/01_DataProcessing/01_missing-acs-counts.R",
+    "project_path": "01_DataProcessing/01_missing-acs-counts.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1614698928210.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "cursorPosition": "133,0",
+        "scrollLine": "0",
+        "source_window_id": "",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1614712233,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1614712234004,
+    "read_only": false,
+    "read_only_alternatives": []
+}

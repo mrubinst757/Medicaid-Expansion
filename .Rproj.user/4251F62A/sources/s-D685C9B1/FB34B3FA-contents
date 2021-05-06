@@ -1,0 +1,54 @@
+expit <- function(x) exp(x)/(1 + exp(x))
+
+blocks <- round(rexp(50, 0.0125))
+X <- rnorm(50, 100, 1)
+Xi <- unlist(map2(X, blocks, ~rep(.x, .y)))
+Xi <- Xi + rnorm(sum(blocks), 0, 1)
+Yi <- Xi 
+pi <- expit(0.25*Xi - 25)
+A <- rbinom(sum(blocks), 1, pi)
+
+m1 <- optweight.svy( ~ X, targets = targets, tols = 0, data = cdat)
+m2 <- optweight.svy( ~ X, targets = targets, tols = 0, data = cdat,
+                     group_n = cblocks, re = 0.5, sigma2.y = 0.5)
+
+
+w1 <- m1$weights/sum(m1$weights)
+w2 <- m2$weights/sum(m2$weights)
+
+test <- function() {
+  data <- tibble(
+    A = A,
+    X = Xi,
+    Ye = Yi,
+    err.y = rnorm(sum(blocks), 0, 1),
+    id = unlist(map2(1:50, blocks, ~rep(.x, .y)))
+  ) %>%
+    group_by(id) %>%
+    mutate(err.v = rnorm(1, 0, 0),
+           Y = Ye + err.y + err.v) 
+  
+  cdat <- subset(data, A == 0)
+  tdat <- subset(data, A == 1)
+  targets <- mean(tdat$X)
+  cblocks <- as.numeric(table(cdat$id))
+  
+  true <- mean(cdat$Ye)
+  yhat1 <- sum(cdat$Y*m1$weights)/sum(m1$weights)
+  yhat2 <-sum(cdat$Y*m2$weights)/sum(m2$weights)
+  
+  d1 <- true - yhat1
+  d2 <- true - yhat2
+  c(d1, d2)
+}
+
+t1 <- map(1:250, ~test())
+
+t1 %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  summarize_all(~var(.x))
+
+sum(w1^2)
+sum(w2^2)
+

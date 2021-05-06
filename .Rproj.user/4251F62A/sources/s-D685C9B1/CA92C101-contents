@@ -1,0 +1,39 @@
+source("03_Analysis/05_etc-analysis.R")
+
+# set names ---------------------------------------------------------------------------------------
+covariate_group <- c('None', 'Republican', "Unins & Unemp", "Urb-Age-Educ-Cit-Mar-Stu-Dis-F",
+                     "Race-Eth-For-Inc-Pov", "Child-PGrowth-HHRatio")
+
+sigma_estimator <- c("sigma_uu_i", "sigma_uu_avg", "sigma_zero")
+
+estimator <- c("H-SBW", "BC-HSBW", "SBW", "BC-SBW")
+
+variables <- read_csv("../02_Specs/tol_specs.csv") %>%
+  filter(`Reference Variable` == 0) %>%
+  arrange(Variable) %>%
+  .$Variable
+
+pretxy <- variables[grep("unins", variables)]
+
+# read data and estimated models ------------------------------------------------------------------
+imputed_dat_c1 <- readRDS("../01_ProcessedData/calibrated-data.rds") %>%
+  unnest() %>%
+  nest(-key)
+
+data <- imputed_dat_c1$data[[1]]
+
+X0 <- as.matrix(t(subset(data, treatment == 1)[variables]))
+X1 <- as.matrix(colMeans(subset(data, treatment == 0)[variables]))
+Z0 <- as.matrix(t(subset(data, treatment == 1)[pretxy]))
+Z1 <- as.matrix(colMeans(subset(data, treatment == 0)[pretxy]))
+V <- rep(1/length(variables), length(variables))
+
+debug(synth)
+test <- synth(X0 = X0, X1 = X1, Z0 = Z0, Z1 = Z1, scale = TRUE, lambda = 0, itnmax = 2)
+?optimx
+var(test$solution.w)
+
+sum(data$hins_unins_pct_2014[data$treatment==1]*test$solution.w) - mean(data$hins_unins_pct_2014[data$treatment==0])
+
+#remotes::install_github("mrubinst757/Synth")
+#library(Synth)

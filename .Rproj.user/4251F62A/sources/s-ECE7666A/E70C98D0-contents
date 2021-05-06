@@ -1,0 +1,78 @@
+#' Estimate minimax balancing weights
+#'
+#' @param X the input features
+#' @param targets targeted mean
+#' @param alpha tuning parameter for selecting approximately balancing weights
+#' @param group_n the number of observations per group, ordered with rows of matrix X
+#' @param solver convex optimizer used by CVXR
+#' @param verbose whether convex optimizer should print verbose output
+#' 
+#' @return balancing weights
+#' 
+#' @export balance_minimax
+
+library(EQL) # for Hermite polynomials
+library(rpart)
+library(osqp)
+
+balance_weights = function(X, targets, alpha, group_n = rep(1, nrow(X)), re = 0, min.weight = 1e-8, 
+                                verbose = FALSE, max_iter = 2E5L, eps_abs = 1E-8, eps_rel = 1E-8) {
+  args <- list(max_iter = max_iter, eps_abs = eps_abs, eps_rel = eps_rel, verbose = verbose)
+  nobs = nrow(X)
+  ndim = ncol(X)
+  Xs = scale(X, scale = FALSE)
+  targets = targets - colMeans(X)
+  P1 = Xs %*% t(Xs)
+  P2 = map(group_n, ~matrix(rep(re, .x^2), .x, .x)) %>% 
+    Matrix::bdiag() %>% 
+    as.matrix()
+  diag(P2) = 1
+  P2 = alpha*P2
+  P = 2*(P1 + P2)
+  P_plus = diag(rep(0, ndim))
+  P = as.matrix(Matrix::bdiag(P, P_plus))
+  G1 = c(rep(1, nobs), rep(0, ndim))
+  G1l = 1; G1u = 1
+  H1 = Matrix::sparseMatrix(1:(nobs + ndim), 1:(nobs + ndim), x = 1)
+  H1l = c(rep(min.weight, nobs), rep(1, ndim)); H1u = c(rep(Inf, nobs), rep(1, ndim))
+  lower = c(G1l, H1l)
+  upper = c(G1u, H1u)
+  A = rbind(G1, H1)
+  q = c(-2*(X %*% targets), targets^2)
+  result = solve_osqp(P = P, q = q, A = A, l = lower, u = upper,
+                      pars = do.call(osqpSettings, args))
+  result$x[1:nobs]*nobs
+}
+
+identity = function(X) {
+  X
+}
+
+polynomial_basis = function(X, order = 3) {
+  map(1:order, ~X^.x) %>%
+    invoke(cbind, .) 
+}
+
+generate_basis = function(X, order=3) {
+  H = lapply(1:ncol(X), function(j) {
+    sapply(1:order, function(k) hermite(X[,j], k, prob = TRUE) / sqrt(factorial(k)))
+  })
+  polys = lapply(1:order, function(r) {
+    partitions = combn(r + ncol(X) -1, ncol(X) - 1,
+                       function(vec) c(vec, r + ncol(X)) - c(0, vec) - 1)
+    elems = sapply(1:ncol(partitions), function(iter) {
+      part = partitions[,iter]
+      idx = which(part > 0)
+      elem = H[[idx[1]]][,part[idx[1]]]
+      if (length(idx) > 1) {
+        for (id in idx[-1]) {
+          elem = elem * H[[id]][,part[id]]
+        }
+      }
+      elem
+    })
+    scale(elems) / sqrt(ncol(elems)) / r
+  })
+  Reduce(cbind, polys)
+}
+

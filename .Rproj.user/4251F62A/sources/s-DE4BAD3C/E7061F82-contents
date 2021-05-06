@@ -1,0 +1,66 @@
+source("03_Analysis/05_etc-analysis.R")
+
+# set names ---------------------------------------------------------------------------------------
+covariate_group <- c('None', 'Republican', "Unins & Unemp", "Urb-Age-Educ-Cit-Mar-Stu-Dis-F",
+                     "Race-Eth-For-Inc-Pov", "Child-PGrowth-HHRatio")
+
+sigma_estimator <- c("sigma_uu_i", "sigma_uu_avg", "sigma_zero")
+
+estimator <- c("H-SBW", "BC-HSBW", "SBW", "BC-SBW")
+
+variables <- read_csv("../02_Specs/tol_specs.csv") %>%
+  filter(`Reference Variable` == 0) %>%
+  arrange(Variable) %>%
+  .$Variable
+
+pretxy <- variables[grep("unins", variables)]
+
+# read data and estimated models ------------------------------------------------------------------
+imputed_dat_c1 <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
+  unnest() %>%
+  nest(-key, -set)
+
+data <- imputed_dat_c1$data[[1]]
+
+tol_list <- read_csv("../02_Specs/tol_specs.csv") 
+
+tols <- tol_list[[1]]
+V <- tol_list$Ideal/(sum(tol_list$Ideal))
+
+train <- imputed_dat_c1$data[imputed_dat_c1$set == "valid"][[1]]
+cdat <- subset(train, treatment == 1)
+form <- paste0("hins_unins_pct_2012 ~", paste0(tol_list$Variable, collapse = "+"))
+
+sort(abs(coef(lm(as.formula(form), cdat))))
+sort(round(coef(lm(as.formula(form), cdat)), 2))
+
+names(cdat)
+# hyperparameters:
+
+# 1. rho: within-state correlation
+# 2. dataset
+# 3. variables
+# 4. delta/lambda
+
+synth_est <- function(data, treatment, variables) {
+  control <- ifelse(treatment == 1, 0, 1)
+  
+  X0 <- as.matrix(t(subset(data, treatment == treatment)[variables]))
+  X1 <- as.matrix(colMeans(subset(data, treatment == control)[variables]))
+  Z0 <- as.matrix(t(subset(data, treatment == treatment)[pretxy]))
+  Z1 <- as.matrix(colMeans(subset(data, treatment == control)[pretxy]))
+  V <- rep(1/length(variables), length(variables))
+  
+  test <- synth(X0 = X0, X1 = X1, Z0 = Z0, Z1 = Z1, scale = FALSE, lambda = 0, custom.v = V)
+  
+  list(sum(data$hins_unins_pct_2014[data$treatment==treatment]*test$solution.w) - 
+    mean(data$hins_unins_pct_2014[data$treatment==control]), test)
+}
+
+library(Synth)
+t1 <- synth_est(data, treatment = 1, variables)
+t2 <- synth_est(data, treatment = 0, variables)
+
+data %>%
+  filter()
+  mutate(weights = t1[[2]]$solution.w)

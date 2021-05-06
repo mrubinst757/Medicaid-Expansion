@@ -1,0 +1,38 @@
+source("03_Analysis/05_etc-analysis.R")
+
+# read data and estimated models ------------------------------------------------------------------
+imputed_dat_c1 <- readRDS("../01_ProcessedData/calibrated-data.rds") %>%
+  unnest() %>%
+  nest(-key)
+
+all_tdat_c1 <- readRDS("../01_ProcessedData/calibrated-data-all-subsets.rds") 
+
+all_tdat_c2 <- readRDS("../01_ProcessedData/calibrated-data-all-subsets-c2.rds") 
+
+# set names ---------------------------------------------------------------------------------------
+covariate_group <- c('None', 'Republican', "Unins & Unemp", "Urb-Age-Educ-Cit-Mar-Stu-Dis-F",
+                     "Race-Eth-For-Inc-Pov", "Child-PGrowth-HHRatio")
+
+sigma_estimator <- c("sigma_uu_i", "sigma_uu_avg", "sigma_zero")
+
+estimator <- c("H-SBW", "BC-HSBW", "SBW", "BC-SBW")
+
+variables <- read_csv("../02_Specs/tol_specs.csv") %>%
+  filter(`Reference Variable` == 0) %>%
+  arrange(Variable) %>%
+  .$Variable
+
+library(Synth)
+pretxy <- variables[grep("hins_unins", variables)]
+X1 <- as.matrix(colMeans(subset(imputed_dat_c1$data[[1]], treatment == 0)[variables]))
+X0 <- t(as.matrix(subset(imputed_dat_c1$data[[1]], treatment == 1)[variables]))
+Z1 <- as.matrix(colMeans(subset(imputed_dat_c1$data[[1]], treatment == 0)[pretxy]))
+Z0 <- t(as.matrix(subset(imputed_dat_c1$data[[1]], treatment == 1)[pretxy]))
+
+test <- synth(X1 = X1, X0 = X0, Z1 = Z1, Z0 = Z0, optimxmethod = "BFGS")
+
+synth
+dim(X0)
+?ipop
+?optimx
+remotes::install_github("mrubinst757/synth")

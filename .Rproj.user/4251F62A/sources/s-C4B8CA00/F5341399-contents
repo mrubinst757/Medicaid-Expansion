@@ -1,0 +1,109 @@
+# program: hte-oate-analysis.R
+# purpose: calculate HTEs
+# author: max rubinstein
+# date modified: january 25, 2021
+
+library(tidyverse)
+library(clubSandwich)
+
+# read variable names
+read_varnames <- function(group = "") {
+  variable_names <- read_csv('../02_Specs/tol_specs.csv') %>%
+    filter(`Reference Variable` == 0) %>%
+    filter(!Group == group) %>%
+    arrange(Variable) %>%
+    .$Variable
+  variable_names
+}
+
+data_subset <- function(data_list, state_name) {
+  map(data_list, ~filter(.x, !state %in% state_name))
+}
+
+calc_hte <- function(contrast, data, model, alpha) {
+  lincom <- rep(0, length(coef(model)))
+  lincom[grep("treatment:repub", names(coef(model)))] <- rep(contrast, 3)
+  dhat <- lincom %*% coef(model)
+  sehat <- sqrt(lincom %*% vcovCR(model, type = "CR2", cluster = data$state) %*% lincom)
+  quantile <- qnorm(1-alpha/2)
+  c(dhat, dhat - quantile*sehat, dhat + quantile*sehat)
+}
+
+# run analysis --------------------------------------------------------------------------------
+merged_data_c1 <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
+  filter(set == "true") %>%
+  select(-treatment) %>%
+  unnest(cols = c(data)) %>%
+  nest(-key) %>%
+  mutate(data = map(data, ~arrange(.x, state, cpuma)))
+
+variables <- map(c("", 1:5), ~read_varnames(.x))[[1]]
+
+merged_data_c2 <- map(merged_data_c1$data, ~filter(.x, !state %in% c("CA", "CT", "MN", "NJ", "WA")))
+
+treatvar <- paste0("treatment:", variables)
+
+formula.all <- paste0("hins_unins_pct_2014 ~ treatment + ", paste0(c(variables, treatvar), collapse = "+"), collapse = "")
+formula.1 <- paste0("yd ~ " , paste0(c(variables), collapse = "+"), collapse = "")
+formula.1 <- paste0("yd ~ repub_gov + repub_lower_control + repub_total_control")
+
+d1 <- merged_data_c1$data[[1]]
+d2 <- merged_data_c1$data[[2]]
+d3 <- merged_data_c1$data[[3]]
+d4 <- merged_data_c2[[1]]
+d5 <- merged_data_c2[[2]]
+d6 <- merged_data_c2[[3]]
+
+m1a <- lm(as.formula(formula.all), data = d1)
+m2a <- lm(as.formula(formula.all), data = d2)
+m3a <- lm(as.formula(formula.all), data = d3)
+m4a <- lm(as.formula(formula.all), data = d4)
+m5a <- lm(as.formula(formula.all), data = d5)
+m6a <- lm(as.formula(formula.all), data = d6)
+
+calc_txfx <- function(data, model) {
+  d1.0 <- subset(data, treatment == 0)
+  d1.1 <- subset(data, treatment == 1)
+  yd1 <- predict(model, data %>% mutate(treatment = 1)) - predict(model, data %>% mutate(treatment = 0))
+  yd2 <- predict(model, d1.0 %>% mutate(treatment = 1)) - predict(model, d1.0 %>% mutate(treatment = 0))
+  yd3 <- predict(model, d1.1 %>% mutate(treatment = 1)) - predict(model, d1.1 %>% mutate(treatment = 0))
+  
+  c("ate" = mean(yd1), "atc" = mean(yd2), "att" = mean(yd3))
+  
+}
+
+yd <- predict(m1a, d1 %>% mutate(treatment = 1)) - predict(m1a, d1 %>% mutate(treatment = 0))
+
+formula.1 <- paste0("yd ~ repub_gov + repub_lower_control + repub_total_control")
+
+table95 <- map2(list(m1a, m2a, m3a, m4a, m5a, m6a), 
+    list(d1, d1, d1, d4, d4, d4), ~calc_hte(-50, .y, .x, 0.05)) %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  set_names(c("Estimate", "l95ci", "u95ci")) %>%
+  mutate(Dataset = c(rep("c1", 3), rep("c2", 3)),
+         `Sigma estimate` = rep(c("sigma_uu_i_modeled", "sigma_uu_avg", "sigma_zero"), 2)) %>%
+  mutate(CI_95 = paste0("(", round(l95ci, 2), ", ", round(u95ci, 2), ")")) %>%
+  select(-l95ci, -u95ci) %>%
+  mutate(Weights = "None")
+
+varnames <- read_csv("../02_Specs/codebook.csv") %>%
+  filter(Pct == 1)
+var_names <- varnames$`Variable Name`
+names(var_names) <- varnames$Variable
+
+adjustment <- c("sigma_zero" = "None",
+                "sigma_uu_i_modeled" = "Heterogeneous", 
+                "sigma_uu_avg" = "Homogeneous")
+
+final <- table95 %>%
+  rename(Adjustment = `Sigma estimate`) %>%
+  mutate_at("Adjustment", ~stringr::str_replace_all(., adjustment)) %>%
+  mutate_at("Dataset", ~stringr::str_replace_all(.,
+                                                 c("c1" =  "Preferred", "c2" =
+                                                    "Early expansion excluded"))) %>%
+  select(Estimate, Adjustment, CI_95, Dataset)
+
+print(xtable::xtable(final), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)

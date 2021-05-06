@@ -1,0 +1,92 @@
+# program: 01-run-aggregate.R
+# purpose: input micro data and output processed datafile
+# author: max rubinstein
+# date modified: february 8, 2021
+
+# run source file ---------------------------------------------------------------------------------
+library(gtools)
+source("01_ProcessData/01_aggregate-microdata.R")
+
+# read auxillary data files and process data, save to disc ----------------------------------------
+
+# codebook mapping survey variable names to new variable names
+recode <- read_csv("C:/Users/mdrub/Box/Vaccine-Intent-Project/codebook/discrete-vars.csv") %>%
+  mutate_at("value", as.character) %>%
+  filter(create_dummy == 1)
+
+codebook <- read_csv("C:/Users/mdrub/Box/Vaccine-Intent-Project/codebook/codebook.csv") %>%
+  filter(original_file == 1)
+
+dummy_vars <- codebook %>%
+  filter(create_dummies == 1)
+
+# urban/rural classifications
+county_urban <- readxl::read_excel("../00_RawData/other/NCHSURCodes2013.xlsx") %>%
+  select(fips = `FIPS code`, urban_fips = `2013 code`) 
+
+# december cases/deaths classification
+covid_cases <- readRDS("../00_RawData/other/covidcast-usafacts.rds") %>%
+  mutate_at("fips", as.numeric) %>%
+  mutate_at(vars(contains("deaths"), contains("cases")), funs(ntile(., 4))) %>%
+  set_names(c("fips", paste0(names(.), "_cat")[-1])) %>%
+  fastDummies::dummy_columns(c("deaths_num_cat", "cases_num_cat", "cases_prop_cat", "deaths_prop_cat"))
+
+voting <- readRDS("../00_RawData/other/voting-agg.rds") %>%
+  mutate(geoid = as.numeric(geoid))
+
+# list of new files given an input data (y-m-d format)
+orig_data <- fread("../00_RawData/microdata/2021-01-race-ethnicity-microdata.csv.gz")
+
+# collapse specified categories
+data <- orig_data %>%
+  mutate(D7  = if_else(stringr::str_length(D7) > 1, "7", D7), # recode multirace responses
+         D7  = ifelse(D7 == 4, 2, D7), # recode native hawaiin/pacislander to native american
+         D8  = ifelse(D8 == 1, 2, D8), # combine less than HS with HS graduation
+         C17 = ifelse(C17 == 4, 2, C17), # combine unsure and no for flu vaccine 
+         B11 = ifelse(B8 == 2, 2, B11), # non-tested for covid vaccine to never tested positive
+         D10 = ifelse(D9 == 2, 3, D10), # add not working category for people employed outside of home
+         Q64 = ifelse(D9 == 2, 20, Q64), # add not working category for primary occupation
+         Q64 = ifelse(Q64 == 16, 30 + Q80, Q64), # add other occupations to Q64
+         Q68 = ifelse(is.na(Q68) & D9 == 1 & !is.na(Q64), 30, Q68), # add other job category for subcategories
+         Q69 = ifelse(is.na(Q69) & D9 == 1 & !is.na(Q64), 30, Q69),
+         Q68 = ifelse(D9 == 2, 20, Q68), # add not working category for work subcategories
+         Q69 = ifelse(D9 == 2, 20, Q69),
+         C9  = ifelse(C9 == 2, 1, C9), #recode somewhat worried to worried
+         ethnicity_race = paste0(D6, "_", D7), # create race by ethnicity variable
+         ethnicity_race = ifelse(grepl("NA", ethnicity_race), 199, ethnicity_race),
+         activities_cat = case_when(
+           grepl("3|4|5", C13) ~ 1,
+           grepl("1|2|6", C13) & !grepl("3|4|5", C13) ~ 2,
+           grepl("8", C13) ~ 3,
+           is.na(C13) ~ 199
+           ),
+         work_cat = case_when(
+           Q64 == 4 | Q64 == 5 ~ 1,
+           Q64 == 2 ~ 2,
+           !is.na(Q64) & Q64 != 2 & Q64 != 4 & Q64 != 5 &  Q64 != 20 ~ 3,
+           Q64 == 20 ~ 4,
+           is.na(D9) | is.na(Q64) ~ 199
+         ))
+
+replace_vars <- codebook$variable_name
+names(replace_vars) <- paste0("^", codebook$variable, "$")
+
+nas <- rep(list(199), length(codebook$variable_name))
+names(nas) <- codebook$variable_name
+
+final <- data %>%
+  set_names(stringr::str_replace_all(names(.), replace_vars)) %>%
+  left_join(county_urban, by = "fips") %>%
+  left_join(covid_cases, by = "fips")  %>%
+  mutate_at(vars(contains("prop_cat"), contains("num_cat")), funs(as.character(.))) %>%
+  left_join(voting, by = c("fips" = "geoid")) %>%
+  mutate(elderly_risk = if_else(age_cat %in% c(6, 7) | hh_eld == 1, 1, 0)) %>%
+  replace_na(nas) %>%
+  process_data(codebook, recode) %>%
+  mutate(intent_binary = case_when(
+    vaccine_intent %in% c(1, 2) ~ 1,
+    vaccine_intent %in% c(3, 4) ~ 0
+  ), 
+  hesitant = 1 - intent_binary)
+
+saveRDS(final, "../00_RawData/processed-data/dat-proc-02-08-2021.rds")

@@ -1,0 +1,18 @@
+library(tidyverse)
+N = 1000
+
+tibble(
+  U1 = rbinom(N, 1. 0.5),
+  U2 = rbinom(N, 1. 0.5)
+  ) %>%
+  mutate(pi = case_when(U1 == 1 & U2 == 1 ~ 0.75,
+                        U1 == 1 & U2 != 1 ~ 0.65,
+                        U1 != 1 & U2 == 1 ~ 0.45,
+                        U1 != 1 & U2 != 1 ~ 0.35)) %>%
+  mutate(
+    Y = rbinom(N, 1, 0.1 + 0.25*A + 0.25*U1 + 0.25*U2),
+    W = rbinom(N, 1, 0.35 + 0.25*U1 + 0.25*U2),
+    Z = rbinom(N, 1, 0.35 + 0.25*U1 + 0.25*U2)
+  )
+)
+

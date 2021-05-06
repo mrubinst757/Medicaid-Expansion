@@ -1,0 +1,31 @@
+expit <- function(x) exp(x)/(1 + exp(x))
+
+hi <- function() {
+  N = 5000
+  set.seed(40)
+  data <- tibble(
+    X = rnorm(N, 0, 1),
+    pi = expit(X^2)
+  )
+  set.seed(NULL)
+  data <- data %>% mutate(
+    A = rbinom(N, 1, pi),
+    Y = X^2 + rnorm(100, 0, 1)
+  )
+  
+  cdat = subset(data, A == 0)
+  tdat = subset(data, A == 1)
+  wts = cdat$pi/(1 - cdat$pi)
+  sum(cdat$Y*wts)/sum(wts) - mean(tdat$Y)
+}
+
+t1 <- map(1:1000, ~hi())
+t1 %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  summarize_all(~mean(abs(.)))
+
+t1 %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  summarize_all(mean)

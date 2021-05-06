@@ -1,0 +1,35 @@
+mynames <- colnames(sigma_uu_tx_c1[[1]])
+coefvals <- round(sigma_uu_tx_c1[[1]][,12], 2)
+names(coefvals) <- mynames
+coefvals
+
+var_dist <- function(num) {
+  map(sigma_uu_tx_c1, ~.x[, num]) %>%
+    map(round, 2) %>%
+    map(~.x[num]) %>%
+    unlist() %>%
+    summary()
+} 
+
+map(1:length(mynames), ~var_dist(.x)) %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  mutate(variable = mynames) %>%
+  arrange(-Median) %>%
+  print.data.frame()
+
+
+
+A <- matrix(rnorm(100, 100, 1), 10, 10)
+
+t(c(1, rep(0, 9))) %*% A
+t(rep(0, 10)) %*% A
+
+
+v <- rnorm(1000, 0, 1)
+v <- map(v, ~rep(.x, 10)) %>%
+  unlist()
+w <- rnorm(10000, 0, 1)
+
+cov(v, w)
+

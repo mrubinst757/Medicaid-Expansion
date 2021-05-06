@@ -1,0 +1,26 @@
+{
+    "id": "0ACFA522",
+    "path": "C:/Users/mdrub/Box/Medicaid-Project/01_Programs/03_RPrograms/01_DataProcessing/06_cpuma-analytic.R",
+    "project_path": "01_DataProcessing/06_cpuma-analytic.R",
+    "type": "r_source",
+    "hash": "1430358663",
+    "contents": "",
+    "dirty": false,
+    "created": 1617201950792.0,
+    "source_on_save": false,
+    "relative_order": 13,
+    "properties": {
+        "cursorPosition": "146,0",
+        "scrollLine": "0",
+        "source_window_id": "",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1617202209,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1617202209637,
+    "read_only": false,
+    "read_only_alternatives": []
+}

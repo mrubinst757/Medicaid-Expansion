@@ -1,0 +1,26 @@
+{
+    "id": "F0D6285B",
+    "path": "C:/Users/mdrub/Box/Medicaid-Project/01_Programs/03_RPrograms/03_Analysis/01_calibrate-data.R",
+    "project_path": "03_Analysis/01_calibrate-data.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1617126977781.0,
+    "source_on_save": false,
+    "relative_order": 9,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "87,34",
+        "scrollLine": "0"
+    },
+    "folds": "6|79|42|0|\n45|87|63|0|\n134|66|195|0|\n",
+    "lastKnownWriteTime": 1612548311,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1617202946101,
+    "read_only": false,
+    "read_only_alternatives": []
+}

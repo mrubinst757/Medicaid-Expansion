@@ -1,0 +1,76 @@
+library(tidyverse)
+source("03_Analysis/05_etc-analysis.R")
+
+# read data and estimated models ------------------------------------------------------------------
+imputed_dat_c1 <- readRDS("../01_ProcessedData/calibrated-data-all.rds")
+
+data <- imputed_dat_c1 %>%
+  filter(set == "true", key == "sigma_zero") %>%
+  unnest() 
+
+lm(hins_unins_pct_2014 ~ treatment, data) %>%
+  summary()
+
+lm(d14 ~ treatment, data) %>%
+  summary()
+
+m1 <- lm(hins_unins_pct_2013 ~ repub_lower_control + treatment, data)
+
+summary(m1)
+
+data <- data %>%
+  mutate(xh = predict(m1)) %>%
+  mutate(hins_unins_pct_2012 = hins_unins_pct_2012 - mean(hins_unins_pct_2012),
+         d14 = hins_unins_pct_2014 - hins_unins_pct_2013) 
+
+lm(hins_unins_pct_2014 ~ hins_unins_pct_2013 + treatment, data) %>%
+  summary()
+
+lm(hins_unins_pct_2014 ~ treatment + xh + hins_unins_pct_2012 + treatment:hins_unins_pct_2012, data) %>%
+  summary()
+
+lm(hins_unins_pct_2014 ~ treatment + xh, data) %>%
+  summary()
+
+lm(hins_unins_pct_2014 ~ treatment + hins_unins_pct_2013 + repub_lower_control, data) %>%
+  summary()
+
+
+data <- tibble(
+  X = rnorm(1000, 100, 10),
+  X2 = X^2,
+  Y = rpois(1000, X + X2)
+)
+
+m1 <- glm(Y ~ X, data, family = poisson)
+m2 <- glm(Y ~ X, data, family = quasipoisson)
+summary(m1)
+summary(m2)
+
+m2 <- glm(Y ~ X + X2, data, family = poisson)
+m3 <- glm(Y ~ X + X2, data, family = quasipoisson)
+summary(m3)
+summary(m2)
+dispersiontest(m1)
+dispersiontest(m2)
+mean((predict(m1) - data$Y)^2)
+?quasipoisson
+132/97
+2632/998
+summary(m2)
+936/997
+plot(data$X, data$Y)
+
+plot(log(fitted(m1)),log((data$Y-fitted(m1))^2))
+abline(0,1) ## 'varianc = mean' line
+
+plot(log(fitted(m2)),log((data$Y-fitted(m2))^2))
+abline(0,1) ## 'varianc = mean' line
+
+plot(fitted(m1), (data$Y-fitted(m1))^2)
+abline(0,1) ## 'varianc = mean' line
+
+plot(fitted(m2), (data$Y-fitted(m2))^2)
+abline(0,1) ## 'varianc = mean' line
+
+su

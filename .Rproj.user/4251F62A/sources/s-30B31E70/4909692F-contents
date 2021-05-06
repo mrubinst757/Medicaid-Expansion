@@ -1,0 +1,98 @@
+# program: hte-oate-analysis.R
+# purpose: calculate HTEs
+# author: max rubinstein
+# date modified: january 25, 2021
+
+library(tidyverse)
+
+# read variable names
+read_varnames <- function(group = "") {
+  variable_names <- read_csv('../02_Specs/tol_specs.csv') %>%
+    filter(`Reference Variable` == 0) %>%
+    filter(!Group == group) %>%
+    arrange(Variable) %>%
+    .$Variable
+  variable_names
+}
+
+data_subset <- function(data_list, state_name) {
+  map(data_list, ~filter(.x, !state %in% state_name))
+}
+
+calc_hte <- function(contrast, data, model, alpha) {
+  lincom <- rep(0, length(coef(model)))
+  lincom[grep("treatment:repub", names(coef(model)))] <- rep(contrast, 3)
+  dhat <- lincom %*% coef(model)
+  sehat <- sqrt(lincom %*% vcovCR(model, type = "CR2", cluster = data$state) %*% lincom)
+  quantile <- qnorm(1-alpha/2)
+  c(dhat, dhat - quantile*sehat, dhat + quantile*sehat)
+}
+
+# run analysis --------------------------------------------------------------------------------
+merged_data_c1 <- readRDS("../01_ProcessedData/calibrated-data.rds") %>%
+  select(-treatment) %>%
+  unnest(cols = c(data)) %>%
+  nest(-key) %>%
+  mutate(data = map(data, ~arrange(.x, state, cpuma)))
+
+variables <- map(c("", 1:5), ~read_varnames(.x))[[1]]
+
+merged_data_c2 <- map(merged_data_c1$data, ~filter(.x, !state %in% c("CA", "CT", "MN", "NJ", "WA")))
+
+oate_results_c1 <- readRDS("../04_Output/oate-results-c1.rds")
+oate_results_c2 <- readRDS("../04_Output/oate-results-c2.rds")
+
+treatvar <- paste0("treatment:", variables)
+
+formula.all <- paste0("hins_unins_pct_2014 ~ treatment + ", paste0(c(variables, treatvar), collapse = "+"), collapse = "")
+formula.all <- gsub("\\+repub_total_control", "", formula.all)
+
+w1c1 <- oate_results_c1$Preferred$None$sigma_uu_i_modeled$weights
+w2c1 <- oate_results_c1$Preferred$None$sigma_uu_avg$weights
+w3c1 <- oate_results_c1$Preferred$None$sigma_zero$weights
+w1c2 <- oate_results_c2$`Early Expansion`$None$sigma_uu_i_modeled$weights
+w2c2 <- oate_results_c2$`Early Expansion`$None$sigma_uu_avg$weights
+w3c2 <- oate_results_c2$`Early Expansion`$None$sigma_zero$weights
+
+m1a <- lm(as.formula(formula.all), data = merged_data_c1$data[[1]])
+m2a <- lm(as.formula(formula.all), data = merged_data_c1$data[[2]])
+m3a <- lm(as.formula(formula.all), data = merged_data_c1$data[[3]])
+m4a <- lm(as.formula(formula.all), data = merged_data_c2[[1]])
+m5a <- lm(as.formula(formula.all), data = merged_data_c2[[2]])
+m6a <- lm(as.formula(formula.all), data = merged_data_c2[[3]])
+
+m1b <- lm(as.formula(formula.all), data = merged_data_c1$data[[1]], weights = w1c1)
+m2b <- lm(as.formula(formula.all), data = merged_data_c1$data[[2]], weights = w2c1)
+m3b <- lm(as.formula(formula.all), data = merged_data_c1$data[[3]], weights = w3c1)
+m4b <- lm(as.formula(formula.all), data = merged_data_c2[[1]], weights = w1c2)
+m5b <- lm(as.formula(formula.all), data = merged_data_c2[[2]], weights = w2c2)
+m6b <- lm(as.formula(formula.all), data = merged_data_c2[[3]], weights = w3c2)
+
+table95 <- map2(list(m1a, m2a, m3a, m4a, m5a, m6a), 
+    list(d1, d1, d1, d2, d2, d2), ~calc_hte(-50, .y, .x, 0.05)) %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  set_names(c("Estimate", "l95ci", "u95ci")) %>%
+  mutate(Dataset = c(rep("c1", 3), rep("c2", 3)),
+         `Sigma estimate` = rep(c("sigma_uu_i_modeled", "sigma_uu_avg", "sigma_zero"), 2)) %>%
+  mutate(CI_95 = paste0("(", round(l95ci, 2), ", ", round(u95ci, 2), ")")) %>%
+  select(-l95ci, -u95ci) %>%
+  mutate(Weights = "None")
+
+table95v <- map2(list(m1b, m2b, m3b, m4b, m5b, m6b), 
+                list(d1, d1, d1, d2, d2, d2), ~calc_hte(-50, .y, .x, 0.05)) %>%
+  invoke(rbind, .) %>%
+  as_tibble() %>%
+  set_names(c("Estimate", "l95ci", "u95ci")) %>%
+  mutate(Dataset = c(rep("c1", 3), rep("c2", 3)),
+         `Sigma estimate` = rep(c("sigma_uu_i_modeled", "sigma_uu_avg", "sigma_zero"), 2)) %>%
+  mutate(CI_95 = paste0("(", round(l95ci, 2), ", ", round(u95ci, 2), ")")) %>%
+  select(-l95ci, -u95ci) %>%
+  mutate(Weights = "Overlap")
+
+final <- table95 %>%
+  rbind(table95v) 
+
+print(xtable::xtable(final), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)

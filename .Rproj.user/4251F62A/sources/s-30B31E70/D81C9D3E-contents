@@ -1,0 +1,209 @@
+library(tidyverse)
+library(glmnet)
+library(optweight)
+
+data <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
+  unnest() %>%
+  nest(-key)
+
+tol_specs <- read_csv('../02_Specs/tol_specs.csv') %>%
+  mutate(`Reference Variable` = case_when(grepl('child', Variable) ~ 0, TRUE ~ `Reference Variable`)) %>%
+  filter(`Reference Variable` == 0) %>%
+  .$Variable %>%
+  sort()
+
+variables <- ifelse(grepl("[0-9]{4}$", variables), 
+                    paste0(gsub("[0-9]{4}", "", variables), as.numeric(stringr::str_extract(variables, "[0-9]{4}")) - 1), 
+                    variables)
+
+variables1 <- variables[-grep("repub", variables)]
+
+tol_specs <- read_csv("../02_Specs/tol_specs.csv") %>%
+  mutate(year = as.numeric(stringr::str_extract(Variable, "[0-9]{4}")) - 1) %>%
+  mutate_at(c("Variable", "Raw Variable", "Denominator", "Sample Size"), ~stringr::str_replace(., "[0-9]{4}$", as.character(year))) 
+
+formula  <- paste0("hins_unins_pct_2013 ~ ", paste0(variables, collapse = "+"))
+formula1 <- paste0("hins_unins_pct_2013 ~ ", paste0(variables1, collapse = "+"))
+
+debias_sbw_weights <- function(sbw_weights, X_1, tols, targets, distance, autotune = TRUE, 
+                               lambda = 0, stop_criterion = NULL, re = 0,
+                               state_num = NULL, max_iter) {
+  # modify variables for data subset
+  variable_names <- names(tols)
+  variables_to_remove <- names(tols)[grepl(100, tols)]
+  assert_that(identical(names(targets), names(tols)))
+  targets <- targets[!grepl(100, tols)]
+  X_1 <- X_1 %>%
+    select(all_of(variable_names)) %>%
+    select(-variables_to_remove)
+  
+  assert_that(ncol(X_1) == length(targets))
+  
+  # calculate imbalance from weighting
+  weights <- sbw_weights$weights/sum(sbw_weights$weights)
+  X_1 <- as.matrix(X_1)
+  orig_imbalance <- t(targets - t(X_1) %*% weights)
+  imb_measure <- distance(orig_imbalance)
+  
+  if (re == 0) {
+    sigma <- diag(rep(1, nrow(X_1)))
+  }
+  
+  if (re > 0) {
+    assert_that(!is.null(state_num))
+    sigma <- map(state_num, ~matrix(rep(re, .x^2), .x, .x)) %>%
+      Matrix::bdiag()
+    diag(sigma) <- 1
+  }
+  
+  sigma_inv <- solve(sigma)
+  
+  collinearity_check <- function(X_1, targets) {
+    constants <- unlist(map(1:ncol(X_1), ~var(X_1[, .x])))
+    constant_index <- unlist(map(constants, ~near(.x, 0))) %>%
+      grep(TRUE, .)
+    
+    if (length(constant_index) > 0) {
+      X_1 <- X_1[, -constant_index]
+      targets <- targets[-constant_index]
+    }
+    
+    X_1 <- cbind(rep(1, nrow(X_1)), X_1)
+    targets = c(1, targets)
+    rank_X1 <- Matrix::rankMatrix(X_1)
+    
+    if (rank_X1 != ncol(X_1)) {
+      qr.x <- qr(X_1)
+      X_1 <- X_1[, qr.x$pivot[1:rank_X1]]
+      targets <- targets[names(targets) %in% colnames(X_1)]
+    }
+    
+    list(X_1 = X_1, targets = targets)
+  }
+  
+  fnMatSqrtInverse = function(mA) {
+    ei = eigen(mA)
+    d = ei$values
+    d = (d+abs(d))/2
+    d2 = 1/sqrt(d)
+    d2[d == 0] = 0
+    return(ei$vectors %*% diag(d2) %*% t(ei$vectors))
+  }
+  
+  adjust_weights <- function(lambda, X_1, targets) {
+    result <- collinearity_check(X_1, targets)
+    X_1 <- result$X_1; targets <- result$targets
+    I_d <- lambda*diag(rep(1, ncol(X_1)))
+    I_d[1, 1] <- 0 #don't want to regularize the summing to one
+    XX <- t(X_1) %*% sigma_inv %*% X_1
+    #XX_inv <- chol2inv(chol(XX + I_d))
+    XX_inv <- solve(XX + I_d)
+    adjustment1 <- t(targets) %*% XX_inv %*% t(X_1) %*% sigma_inv
+    adjustment2 <- t(t(X_1) %*% weights) %*% XX_inv %*% t(X_1) %*% sigma_inv
+    adjustment <- adjustment1 - adjustment2
+    w_new <- as.vector(weights + adjustment)
+    w_new
+  }
+  
+  if (autotune == TRUE) {
+    lambda <- 1e7
+    
+    if (imb_measure < stop_criterion) {
+      w_new <- weights
+    }
+    count <- 0
+    
+    while((imb_measure > stop_criterion) & count <= 50) {
+      w_new <- adjust_weights(lambda, X_1, targets)
+      imbalance <- t(targets - t(X_1) %*% w_new)
+      imb_measure <- distance(imbalance)
+      lambda <- lambda/10
+      count <- count + 1
+      iter <- count %% 10
+      if (iter == 0 & imb_measure > stop_criterion) {
+        imb_measure <- imb_measure + 0.1
+        lambda <- 1e7
+      }
+    }
+  }
+  if (autotune == FALSE)  {
+    w_new <- adjust_weights(lambda, X_1, targets)
+    imbalance <- t(targets - t(X_1) %*% w_new)
+    imb_measure = distance(imbalance)
+    lambda <- lambda/10
+  }
+  list(weights = w_new*length(weights), imbalance = imbalance, lambda = lambda*10)
+}
+
+linf_imbalance <- function(imbalance) {
+  max(abs(imbalance))
+}
+
+weight_test <- function(data) {
+  cdat <- subset(data, treatment == 0)
+  tdat <- subset(data, treatment == 1)
+  targets <- colMeans(cdat[tol_specs$Variable])
+  formula  <- paste0(" ~ ", paste0(tol_specs$Variable, collapse = "+"))
+  blocks <- as.numeric(table(tdat$state))
+  tols <- tol_specs$`Base Tol`
+  names(tols) <- tol_specs$Variable
+  
+  m1 <- optweight.svy(as.formula(formula), data = tdat, 
+                      tols = tols, targets = targets,
+                      group_n = blocks, sigma2.y = 0.8, re = 0.2)
+  
+  m2 <- optweight.svy(as.formula(formula), data = tdat, 
+                      tols = tols, targets = targets,
+                      group_n = blocks, sigma2.y = 1, re = 0)
+  
+  m3 <- debias_sbw_weights(m1, tdat, tols = tols, state_num = blocks, 
+                     targets = targets, distance = linf_imbalance,
+                     stop_criterion = 0.5, re = 0.2)
+
+  m4 <- debias_sbw_weights(m1, tdat, tols = tols,
+                           targets = targets, distance = linf_imbalance,
+                           stop_criterion = 0.5)
+  
+  X0 <- as.matrix(t(tdat[variables]))
+  X1 <- as.matrix(colMeans(cdat[variables]))
+  Z0 <- as.matrix(t(tdat[depvars]))
+  Z1 <- as.matrix(colMeans(cdat[depvars]))
+  V <- rep(1/length(variables), length(variables))
+  
+  m5 <- synth(X0 = X0, X1 = X1, Z0 = Z0, Z1 = Z1, scale = TRUE, lambda = 0, custom.v = V)
+  m6 <- synth(X0 = X0, X1 = X1, Z0 = Z0, Z1 = Z1, scale = FALSE, lambda = 0, custom.v = V)
+  
+  list(c(m1 = sum(m1$weights*tdat$hins_unins_pct_2013)/sum(m1$weights),
+    m2 = sum(m2$weights*tdat$hins_unins_pct_2013)/sum(m2$weights),
+    m3 = sum(m3$weights*tdat$hins_unins_pct_2013)/sum(m3$weights),
+    m4 = sum(m4$weights*tdat$hins_unins_pct_2013)/sum(m4$weights),
+    m5 = sum(m5$solution.w*tdat$hins_unins_pct_2013)/sum(m5$solution.w),
+    m6 = sum(m6$solution.w*tdat$hins_unins_pct_2013)/sum(m6$solution.w),
+    truth = mean(cdat$hins_unins_pct_2013)),
+    list(m1, m2, m3, m4, m5, m6))
+}
+
+t1 <- weight_test(data$data[[1]])
+t2 <- weight_test(data$data[[2]])
+t3 <- weight_test(data$data[[3]])
+
+rbind(t1[[1]], t2[[1]], t3[[1]])
+
+var(t1[[2]][[5]]$solution.w)
+
+t1[[2]][[5]]$loss.v
+t1[[2]][[6]]$loss.v
+t1[[2]][[6]]$loss.w
+
+data$data[[1]] %>%
+  filter(treatment == 1) %>%
+  mutate(weights = t1[[2]][[5]]$solution.w) %>%
+  summarize_at(vars(variables), ~sum(.x*weights)) %>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column() %>%
+  bind_cols(
+    colMeans(subset(data$data[[1]], treatment == 0)[variables])
+  )
+
+var(t1[[2]][[1]]$weights/t1[[2]][[1]]$weights)

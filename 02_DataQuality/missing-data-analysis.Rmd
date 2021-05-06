@@ -1,0 +1,102 @@
+---
+title: "Data Quality Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Missing data in the annual ACS file
+
+In this document we highlight missing data in the ACS microdata and we explain how we address these problems in our subsequent analysis. We note that the ACS may automatically impute some missing values included in the original survey results. These results are the missing values as given in the annual microdata.
+
+```{r cars}
+# load libraries and set dirs ------------------------------------------------------------------------------------------
+library(tidyverse)
+
+person_data = read_rds('../../01_ProcessedData/missing-acs-person-data.rds') 
+household_data = read_rds('../../01_ProcessedData/missing-acs-household-data.rds')
+```
+
+## Person File
+
+We first summarize the total number of missing observations for each variable contained in the dataset.
+
+```{r}
+person_data %>%
+  mutate(across(contains('missing'), ~.x/sample)) %>%
+  ungroup() %>%
+  select(-sample, -state, -cpuma, -year) %>%
+  ungroup() %>%
+  summarize_all(mean) %>%
+  sort(decreasing = TRUE) %>%
+  t() 
+```
+We see that in the person file the only variable with missing values are `student`, and `inc_pov`. Student is 88.6 percent missing on average. Our student variable we include simply summarizes the data to be one if the person is a student and zero otherwise. We should therefore interpret this variable carefully in that the reference category is both missing values, who might be students, and non-students.
+
+We now take a closer look at `inv_pov`, and examine the distribution of missingness (note that the analysis is at the CPUMA-year level, so CPUMAs may appear multiple times):
+
+```{r}
+person_data %>%
+  select(cpuma, state, year, missing_inc_pov, sample) %>%
+  mutate(missing_inc_pov = missing_inc_pov/sample) %>%
+  ggplot(aes(y = missing_inc_pov)) +
+  geom_boxplot()
+```
+
+We see that the distribution is right-skewed but largely falls under 10 percent, with a median under 5 percent. An overall summary of the variable shows that
+
+```{r}
+person_data %>%
+  select(cpuma, state, year, missing_inc_pov, sample) %>%
+  mutate(missing_inc_pov = missing_inc_pov/sample) %>%
+  select(missing_inc_pov, sample) %>%
+  ggplot(aes(x = missing_inc_pov, y = sample)) +
+  geom_point()
+```
+We see that only CPUMAs with smaller overall samples had such high percentages of missing data.
+
+```{r}
+person_data %>%
+  select(cpuma, state, year, missing_inc_pov, sample) %>%
+  mutate(missing_inc_pov = missing_inc_pov/sample) %>%
+  arrange(-missing_inc_pov) %>%
+  filter(missing_inc_pov > .10) %>%
+  ungroup() %>%
+  select(state) %>%
+  table() %>%
+  sort()
+```
+We see that these CPUMAs are most likely come from the following states: Ohio (36), Colorado (06), South Dakota (42), Washington (48), and Hawaii (12). Overall this percentage of missingness is high enough that rather than include the missing values in a reference category, we create a separate category of income to poverty ratio for percent missing, and we condition on this as a covariate in our model.
+
+## Household File
+
+We now consider missing data in the household file. The only variable we use for household covariates is number of children. Note that we do not link this file to the person dataset (using the SERIALNO variable), but separately aggregate these numbers.
+
+We first examine the distribution of missing data for number of children, again at the CPUMA-year level (where the individual-level data is at the household-level):
+
+```{r}
+household_missing = household_data %>%
+  select(cpuma, state, year, missing_noc, sample) %>%
+  mutate(pct_missing = missing_noc/sample)
+
+household_missing %>%
+  ggplot(aes(y = pct_missing)) +
+  geom_boxplot()
+```
+We see that the percentage of observations with missing children can be quite high with substantial outliers. Overall we get on average `r round(100*mean(household_missing$pct_missing), 2)` percent missing values with a median of `r round(100*median(household_missing$pct_missing), 2)` percent and a maximum of `r round(100*max(household_missing$pct_missing), 2)` percent.
+
+```{r}
+summary(household_missing$pct_missing)
+```
+
+```{r}
+household_missing %>%
+  filter(pct_missing > 0.3) %>%
+  ungroup() %>%
+  select(state) %>%
+  table() %>%
+  sort()
+```
+Among states with CPUMAs greater than 30 percent missing, we again see that Ohio, Colorado, South Dakota, and Washington again have among the highest missing values. We therefore again create a missing indicator to account for NAs in the dataset.

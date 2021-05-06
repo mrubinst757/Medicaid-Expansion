@@ -1,0 +1,129 @@
+# program: 05-balance-plots.R
+# purpose: generate balance plots
+# author: max rubinstein
+# date modified: december 14, 2020
+
+source("03_Analysis/04_balance-plots.R")
+
+# read data and variable names -----------------------------------------------------------------------
+variable_names = read_csv('../02_Specs/tol_specs.csv') %>%
+  filter(`Reference Variable` == 0) %>%
+  arrange(Variable) %>%
+  select(Variable, `Raw Variable`, Denominator)
+
+variables <- variable_names$Variable
+
+varnames <- read_csv("../02_Specs/codebook.csv") %>%
+  filter(Pct == 1)
+var_names <- varnames$`Variable Name`
+names(var_names) <- varnames$Variable
+
+codebook <- read_csv("../02_Specs/codebook.csv")
+
+merged_data_c1 <- readRDS('../01_ProcessedData/calibrated-data-all.rds') %>%
+  filter(set == "true") %>%
+  unnest() %>%
+  nest(-key)
+
+merged_data_c2 <- readRDS('../01_ProcessedData/calibrated-data-all.rds') %>%
+  filter(set == "true") %>%
+  unnest() %>%
+  filter(!state %in% c("CA", "CT", "MN", "NJ", "WA")) %>%
+  nest(-key)
+
+# extract preferred weights ---------------------------------------------------------------------------
+etc_c1_results <- readRDS("../04_Output/c1-results.rds")
+oate_c1_results <- readRDS("../04_Output/oate-results-c1.rds")
+etc_c2_results <- readRDS("../04_Output/c2-results.rds")
+oate_c2_results <- readRDS("../04_Output/oate-results-c2.rds")
+
+weights_etu_c1 <- etc_c1_results$Preferred$None$`H-SBW`$sigma_uu_avg$weights
+weights_oate_c1 <- oate_c1_results$Preferred$None$sigma_uu_avg$weights
+weights_etu_c2 <- etc_c2_results$`Early expansion`$None$`H-SBW`$sigma_uu_avg$weights
+weights_oate_c2 <- oate_c2_results$`Early Expansion`$None$sigma_uu_avg$weights
+weights_etu_c1_unadj <- etc_c1_results$Preferred$None$`H-SBW`$sigma_zero$weights
+
+balance_comp1 <- hsbw_baltab(merged_data_c1$data[[3]], weights_etu_c1_unadj, variables) %>%
+  filter(grepl("unins|unemp", Variables)) %>%
+  select(Variables, `Unweighted Difference`, `Weighted Difference (unadjusted)` = `Weighted Difference`)
+
+balance_comp2 <- hsbw_baltab(merged_data_c1$data[[2]], weights_etu_c1_unadj, variables) %>%
+  filter(grepl("unins|unemp", Variables)) %>%
+  select(Variables, `Weighted Difference (unadjusted)` = `Weighted Difference`)
+
+balance_comp3 <- hsbw_baltab(merged_data_c1$data[[1]], weights_etu_c1_unadj, variables) %>%
+  filter(grepl("unins|unemp", Variables)) %>%
+  select(Variables, `Weighted Difference (adjusted)` = `Weighted Difference`)
+
+final_bcomp <- balance_comp1 %>%
+  left_join(balance_comp2, by = "Variables") %>%
+  mutate_at("Variables", ~stringr::str_replace_all(., var_names))
+
+print(xtable::xtable(final_bcomp), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)
+
+oate_dist_c1 <- calc_oate_distance(merged_data_c1$data[[1]], weights_oate_c1, weights_etu_c1, variables)
+oate_dist_c2 <- calc_oate_distance(merged_data_c2$data[[1]], weights_oate_c2, weights_etu_c2, variables)
+
+balance_etc_c1 <- hsbw_baltab(merged_data_c1$data[[2]], weights_etu_c1, variables)
+balance_etc_c2 <- hsbw_baltab(merged_data_c2$data[[1]], weights_etu_c2, variables)
+
+hsbw_balplot(balance_etc_c1, "c1")
+hsbw_balplot(balance_etc_c2, "c2")
+
+#oate_distance_plot(oate_dist_c1, "c1")
+#oate_distance_plot(oate_dist_c2, "c2")
+
+#calc_mean_oate_dist(oate_dist_c1)
+#calc_mean_oate_dist(oate_dist_c2)
+
+total_etc <- balance_etc_c1 %>%
+  mutate(`Preferred` = paste0("(", round(`Unweighted Difference`, 2), ", ", round(`Weighted Difference`, 2), ")")) %>%
+  select(-contains("Difference")) %>%
+  left_join(balance_etc_c2 %>%
+              mutate(`Early Excluded` = paste0("(", round(`Unweighted Difference`, 2), ", ", round(`Weighted Difference`, 2), ")")) %>%
+              select(-contains("Difference"))) %>%
+  mutate_at("Variables", ~stringr::str_replace_all(., var_names))
+
+
+#total_oate <- oate_dist_c1 %>% 
+#  mutate(Preferred = paste0("(", round(dist_ct, 2), ", ", round(dist_tx, 2), ")")) %>%
+#  select(-contains("dist")) %>%
+#  left_join(oate_dist_c2 %>%
+#              mutate(`Early Excluded` = paste0("(", round(dist_ct, 2), ", ", round(dist_tx, 2), ")")) %>%
+#              select(-contains("dist"))) %>%
+#  mutate_at("Variables", ~stringr::str_replace_all(., var_names))
+
+print(xtable::xtable(total_etc), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)
+
+print(xtable::xtable(total_oate), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)
+
+w1a <- oate_c1_results$Preferred$None$sigma_uu_i_modeled$weights
+w1b <- oate_c1_results$Preferred$None$sigma_uu_avg$weights
+w1c <- oate_c1_results$Preferred$None$sigma_zero$weights
+w2a <- oate_c2_results$`Early Expansion`$None$sigma_uu_i_modeled$weights
+w2b <- oate_c2_results$`Early Expansion`$None$sigma_uu_avg$weights
+w2c <- oate_c2_results$`Early Expansion`$None$sigma_zero$weights
+
+oate_region_c1 <- oate_region_table(merged_data_c1$data, w1a, w1b, w1c) %>%
+  mutate_at("Variables", ~stringr::str_replace_all(., var_names))
+
+oate_region_c2 <- oate_region_table(merged_data_c2$data, w2a, w2b, w2c) %>%
+  mutate_at("Variables", ~stringr::str_replace_all(., var_names))
+
+
+oate_region_plot(merged_data_c1$data[[1]], w1a, "c1-a")
+oate_region_plot(merged_data_c2$data[[1]], w2a, "c2-a")
+
+print(xtable::xtable(oate_region_c1, digits = c(0, 0, 0, 2, 2, 2)), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)
+
+print(xtable::xtable(oate_region_c2, digits = c(0, 0, 0, 2, 2, 2)), include.rownames = FALSE,
+      latex.environments = NULL, 
+      booktabs = TRUE)

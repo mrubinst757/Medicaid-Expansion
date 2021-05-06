@@ -1,0 +1,144 @@
+source("03_Analysis/02_model-estimation.R")
+
+# set names ---------------------------------------------------------------------------------------
+covariate_group <- c("None")
+
+sigma_estimator <- c("sigma_uu_i", "sigma_uu_avg", "sigma_zero")
+
+estimator <- c("H-SBW", "BC-HSBW", "SBW", "BC-SBW", "Synth")
+
+read_vars <- function(var_name) {
+  read_csv("../02_Specs/tol_specs.csv") %>%
+    filter(`Reference Variable` == 0) %>%
+    arrange(Variable) %>%
+    .[[var_name]] %>%
+    sort()
+}
+
+variables <- read_vars("Variable")
+vars1 <- read_vars("var_valid")
+vars2 <- read_vars("var_test")
+
+pretxy <- variables[grep("unins", variables)]
+
+tol_list <- read_csv("../02_Specs/tol_specs.csv") 
+
+tol_list <- map(0, ~tol_list %>% mutate(`Base Tol` = if_else(grepl(.x, Group), 100, `Base Tol`))) %>%
+  map(~filter(.x, Variable %in% variables)) %>%
+  map(~arrange(.x, Variable)) %>%
+  map(~.x$`Base Tol`) %>%
+  map(~set_names(.x, variables))
+
+tols1 <- tol_list[[1]]
+names(tols1) <- vars1
+tols2 <- tols1
+names(tols2) <- vars2
+
+# read data and estimated models ------------------------------------------------------------------
+imputed_dat_c1 <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
+  unnest() %>%
+  nest(-key, -set)
+
+# distance measure
+linf_imbalance <- function(imbalance) {
+  max(abs(imbalance))
+}
+
+estimates <- function(data, variables, tols) {
+  tdat <- data %>%
+    map(~filter(.x, treatment == 1))
+  cdat <- subset(data[[3]], treatment == 0)
+  targets <- colMeans(cdat[variables])
+  w1 <- generate_weight_list(tols, tdat, targets, linf_imbalance, 
+                             stop_criterion = 0.5, max_iter = 1e6)
+  w1
+}
+
+weights1 <- estimates(imputed_dat_c1$data[7:9], vars1, tols1)
+weights2 <- estimates(imputed_dat_c1$data[4:6], vars2, tols2)
+
+dat1 <- imputed_dat_c1$data[7:9]
+dat2 <- imputed_dat_c1$data[4:6]
+
+comparison1 <- function(data, weight_result) {
+  predict_oos <- function(tdat, weights) {
+    map2(tdat, weights, ~mutate(.x, weights = .y$weights) %>%
+           dplyr::summarize(p1 = sum(weights*hins_unins_pct_2012)/sum(weights),
+                            p2 = sum(weights*hins_unins_pct_2013)/sum(weights)))
+  }
+  tdat <- data %>%
+    map(~filter(.x, treatment == 1))
+  
+  map(weight_result, ~predict_oos(tdat, .x))
+}
+
+comparison2 <- function(data, weight_result) {
+  predict_oos <- function(tdat, weights) {
+    map2(tdat, weights, ~mutate(.x, weights = .y$weights) %>%
+           dplyr::summarize(p3 = sum(weights*hins_unins_pct_2013)/sum(weights)))
+  }
+  tdat <- data %>%
+    map(~filter(.x, treatment == 1))
+  
+  map(weight_result, ~predict_oos(tdat, .x))
+}
+
+cov_errors <- function(data, weight_results, variables) {
+  tdat <- data %>%
+    map(~filter(.x, treatment == 1))
+  cdat <- subset(data[[3]], treatment == 0)[variables] 
+  prey <- variables[grep("hins_unins", variables)]
+  targets <- colMeans(cdat[variables])
+  preymeans <- colMeans(cdat[prey])
+  
+  predict_oos <- function(data, weight_results, variables) {
+    map2(data, weight_results, ~mutate(.x, weights = .y$weights) %>%
+           dplyr::summarize_at(vars(all_of(variables)), ~sum(.*weights)/sum(weights))) %>%
+      invoke(rbind, .)
+  }
+  map(weight_results, ~predict_oos(tdat, .x, variables)) %>%
+    map(~t(.)) %>%
+    map(~cbind(.x, targets))
+}
+
+cov_errors(dat1, weights1, vars1) %>%
+  map(~as_tibble(.x)) %>%
+  map(~mutate_all(.x, ~abs(. - targets))) %>%
+  map(~summarize_all(.x, mean)) %>%
+  invoke(rbind, .)
+
+cov_errors(dat1, weights1, vars1) %>%
+  map(~as.data.frame(.x) %>% rownames_to_column()) %>%
+  map(~filter(.x, grepl('hins_unins', rowname))) %>%
+  map(~select(.x, -rowname)) %>%
+  map(~mutate_all(.x, ~abs(. - targets))) %>%
+  map(~summarize_all(.x, mean)) %>%
+  invoke(rbind, .)
+
+c1 <- comparison1(dat1, weights1) %>%
+  map(~invoke(rbind, .x)) %>%
+  map(~mutate(.x, sigma_estimate = sigma_estimator)) %>%
+  invoke(rbind, .) %>%
+  mutate(estimator = rep(estimator, each = 3)) %>%
+  mutate(truth1 = truth[1], truth2 = truth[2]) %>%
+  mutate(err.1 = p1 - truth1, err.2 = p2 - truth2) 
+
+c2 <- comparison2(dat2, weights2) %>%
+  map(~invoke(rbind, .x)) %>%
+  map(~mutate(.x, sigma_estimate = sigma_estimator)) %>%
+  invoke(rbind, .) %>%
+  mutate(estimator = rep(estimator, each = 3)) %>%
+  mutate(truth2 = truth[2]) %>%
+  mutate(err.3 = p3 - truth2) 
+
+left_join(c1, c2, by = c("sigma_estimate", "estimator", "truth2")) %>%
+  mutate(mse = (err.1^2 + err.2^2 + err.3^2)/3) %>%
+  arrange(mse) 
+
+truth <- colMeans(cdat[c("hins_unins_pct_2012", "hins_unins_pct_2013")])
+
+cdat <- subset(dat[[3]], treatment == 0)
+
+
+
+
