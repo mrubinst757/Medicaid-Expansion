@@ -1,1 +1,3 @@
 The 01_calibrate-data file contains functions that are used to create a linear approximation to the true covariate values using the ACS replicate survey weights. The 02_model-estimation program contains programs that generate various sets of weights. The 03_jackknife program recomputes the 01 and 02 programs while removing one state at a time. The 04 through 06 programs contain functions to run the analysis pertaining to balance plots, and the treatment effect on the controls. The run-programs folder contains the files that execute these programs, as well as additional plots and analyses.
+
+Note: H-SBW weights are calculated using a modification of the ``optweight'' package at mrubinst757/optweight
