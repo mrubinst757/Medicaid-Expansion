@@ -224,12 +224,11 @@ EstimateSBW <- function(balance_variable, data, target, re_spec) {
   return(model$weights)
 }
 
-SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE) {
+SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE, x.only = FALSE) {
   
   popdat <- population$data
   re_true <- population$rho
   var.y <- population$var.y
-  re_list <- c(0, 0.25, 0.5)
   
   cor.mat.w <- population$cor.mat.w
   cor.mat.x <- population$cor.mat.x
@@ -247,32 +246,40 @@ SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE) {
   start <- lag(finish) + 1; start[1] <- 1
   indices <- map2(start, finish, ~c(.x:.y))
   
-  SigmaSS_list <- CalcSigSS(data)
-  weights <- unlist(map(indices, length))
-  weights <- weights/sum(weights)
-  SigmaSS <- Reduce(`+`, map2(SigmaSS_list, weights, ~.x * .y))
-  
-  cor.mat.v.list <- map(1:nrow(data), ~data[.x, c("V1", "V2", "V3")] %>%
-                          as.numeric(.[1,]) %>%
-                          diag())
-  
-  Sigma_vv_est <- map(cor.mat.v.list, ~.x + diag(rnorm(3, 0, sqrt(0.001*450))))
-  
-  data <- data %>%
-    CalcXhat(estimate = "Truth", cor.mat.x, cor.mat.w, Sigma_vv_est = Sigma_vv_est) %>%
-    CalcXhat(estimate = "Homogeneous", Sigma_vv_est = Sigma_vv_est) %>%
-    CalcXhat(estimate = "Heterogeneous", Sigma_vv_est = Sigma_vv_est) %>%
-    CalcXhat(estimate = "Correlated", SigmaSS = SigmaSS, Sigma_vv_est = Sigma_vv_est) %>%
-    arrange(id)
-  
   target <- c(1, 1, 1)
   
-  weights.xhat.hom  <- map(re_list, ~EstimateSBW("Xhat.hom", data, target, .x))
-  weights.xhat.het  <- map(re_list, ~EstimateSBW("Xhat.het", data, target, .x))
-  weights.xhat.cor  <- map(re_list, ~EstimateSBW("Xhat.cor", data, target, .x))
-  weights.ex        <- map(re_list, ~EstimateSBW("EX", data, target, .x))
-  weights.x         <- map(re_list, ~EstimateSBW("X", data, target, .x))
-  weights.w         <- map(re_list, ~EstimateSBW("W", data, target, .x))
+  if (x.only == FALSE) {
+    re_list <- c(0, 0.25, 0.5)
+    SigmaSS_list <- CalcSigSS(data)
+    weights <- unlist(map(indices, length))
+    weights <- weights/sum(weights)
+    SigmaSS <- Reduce(`+`, map2(SigmaSS_list, weights, ~.x * .y))
+    
+    cor.mat.v.list <- map(1:nrow(data), ~data[.x, c("V1", "V2", "V3")] %>%
+                            as.numeric(.[1,]) %>%
+                            diag())
+    
+    Sigma_vv_est <- map(cor.mat.v.list, ~.x + diag(rnorm(3, 0, sqrt(0.001*450))))
+    
+    data <- data %>%
+      CalcXhat(estimate = "Truth", cor.mat.x, cor.mat.w, Sigma_vv_est = Sigma_vv_est) %>%
+      CalcXhat(estimate = "Homogeneous", Sigma_vv_est = Sigma_vv_est) %>%
+      CalcXhat(estimate = "Heterogeneous", Sigma_vv_est = Sigma_vv_est) %>%
+      CalcXhat(estimate = "Correlated", SigmaSS = SigmaSS, Sigma_vv_est = Sigma_vv_est) %>%
+      arrange(id)
+    
+    weights.xhat.hom  <- map(re_list, ~EstimateSBW("Xhat.hom", data, target, .x))
+    weights.xhat.het  <- map(re_list, ~EstimateSBW("Xhat.het", data, target, .x))
+    weights.xhat.cor  <- map(re_list, ~EstimateSBW("Xhat.cor", data, target, .x))
+    weights.ex        <- map(re_list, ~EstimateSBW("EX", data, target, .x))
+    weights.x         <- map(re_list, ~EstimateSBW("X", data, target, .x))
+    weights.w         <- map(re_list, ~EstimateSBW("W", data, target, .x))
+  }
+  
+  if (x.only == TRUE) {
+    re_list <- c(0, 0.25, 0.5, 0.75, 0.99)
+    weights.x <- map(re_list, ~EstimateSBW("X", data, target, .x))
+  }
   
   GenEsts <- function(data, weights.w, weights.x, weights.ex, weights.xhat.hom, weights.xhat.het,
                       weights.xhat.cor) {
@@ -301,12 +308,19 @@ SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE) {
   
   GenEstsP <- partial(GenEsts, data = data)
   
-  all_weights <- pmap(list(weights.x = weights.x, 
-                           weights.ex = weights.ex, 
-                           weights.w = weights.w, 
-                           weights.xhat.hom = weights.xhat.hom,
-                           weights.xhat.het = weights.xhat.het,
-                           weights.xhat.cor = weights.xhat.cor), GenEstsP)
+  if (x.only == FALSE) {
+    all_weights <- pmap(list(weights.x = weights.x, 
+                             weights.ex = weights.ex, 
+                             weights.w = weights.w, 
+                             weights.xhat.hom = weights.xhat.hom,
+                             weights.xhat.het = weights.xhat.het,
+                             weights.xhat.cor = weights.xhat.cor), GenEstsP)
+  }
+  
+  if (x.only == TRUE) {
+    ests.x      <- map_dbl(weights.x, ~sum(data$J*.x)/sum(.x))
+    all_weights <- list(tibble(ests = ests.x, Xset = "X"))
+  }
   
   transpose_results <- function(results, xvar, re_list) {
     res <- map(results, ~filter(.x, Xset == xvar)) %>%
@@ -317,14 +331,105 @@ SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE) {
   
   if (jackknife_varest == TRUE) {
     
-    all_weights_t <- map(c("X", "W", "EX", "Xhat.hom", "Xhat.het", "Xhat.cor"), 
-                         ~transpose_results(all_weights, .x, re_list))
+    if (x.only == FALSE) {
+      all_weights_t <- map(c("X", "W", "EX", "Xhat.hom", "Xhat.het", "Xhat.cor"), 
+                           ~transpose_results(all_weights, .x, re_list))
+      
+      JackknifeP <- partial(Jackknife, data = data, target = target, cor.mat.w = cor.mat.w, cor.mat.x = cor.mat.x,
+                            SigmaSS_list = SigmaSS_list, Sigma_vv_est = Sigma_vv_est)
+      
+      res <- pmap(list(estimate_df = all_weights_t, 
+                       jackest = c(FALSE, FALSE, FALSE, TRUE, TRUE, TRUE),
+                       estimate = c(rep("Homogeneous", 4), "Heterogeneous", "Correlated")), JackknifeP) %>% 
+        invoke(rbind, .) %>%
+        mutate(N = nrow(data))
+    }
+    if (x.only == TRUE) {
+      all_weights_t <- map("X", ~transpose_results(all_weights, .x, re_list))
+      
+      JackknifeP <- partial(Jackknife, data = data, target = target, cor.mat.w = cor.mat.w, cor.mat.x = cor.mat.x,
+                            SigmaSS_list = SigmaSS_list, Sigma_vv_est = Sigma_vv_est, x.only = TRUE)
+      
+      res <- pmap(list(estimate_df = all_weights_t, 
+                       jackest = TRUE,
+                       estimate = "None"), JackknifeP) %>% 
+        invoke(rbind, .) %>%
+        mutate(N = nrow(data))
+    }
+  }
+  if (jackknife_varest == FALSE) {
+    res <- all_weights %>%
+      map2(re_list, ~mutate(.x, re = .y)) %>%
+      invoke(rbind, .) %>%
+      mutate(truth = 3, 
+             bias = ests - 3,
+             mse = (ests - 3)^2,
+             N = nrow(data))
+  }
+  return(res)
+}
+
+# finish editing this
+SimulationHSBW.xonly <- function(population, sample_states, jackknife_varest = TRUE) {
+  
+  popdat <- population$data
+  re_true <- population$rho
+  var.y <- population$var.y
+  re_list <- c(0, 0.25, 0.5)
+  
+  cor.mat.w <- population$cor.mat.w
+  cor.mat.x <- population$cor.mat.x
+  
+  ett.pop <- 3
+  
+  data <- popdat %>%
+    nest(-id) %>%
+    sample_n(sample_states) %>%
+    unnest() %>%
+    arrange(id)
+  
+  blocks <- as.numeric(table(data$id))
+  finish <- cumsum(blocks)
+  start <- lag(finish) + 1; start[1] <- 1
+  indices <- map2(start, finish, ~c(.x:.y))
+  
+  data <- data %>%
+    CalcXhat(estimate = "Truth", cor.mat.x, cor.mat.w, Sigma_vv_est = Sigma_vv_est) %>%
+    arrange(id)
+  
+  target <- c(1, 1, 1)
+  
+  weights.x         <- map(re_list, ~EstimateSBW("X", data, target, .x))
+
+  GenEsts <- function(data, weights.x) {
+    if (!is.data.frame(data)) {
+      ests.x    <- map(data, ~sum(.x$J*weights.x)/sum(weights.x))
+      return(list(ests.x = ests.x))
+    }
+    if (is.data.frame(data)) {
+      ests.x    <- sum(data$J*weights.x)/sum(weights.x)
+      return(tibble(ests = c(ests.x),
+                    Xset = c("X")))
+    }
+  }
+  
+  all_weights <- map(weights.x, ~GenEsts(data, .x))
+  
+  transpose_results <- function(results, xvar, re_list) {
+    res <- map(results, ~filter(.x, Xset == xvar)) %>%
+      invoke(rbind, .) %>%
+      mutate(re = re_list)
+    return(res)
+  }
+  
+  if (jackknife_varest == TRUE) {
+    
+    all_weights_t <- map(c("X"), ~transpose_results(all_weights, .x, re_list))
     
     JackknifeP <- partial(Jackknife, data = data, target = target, cor.mat.w = cor.mat.w, cor.mat.x = cor.mat.x,
                           SigmaSS_list = SigmaSS_list, Sigma_vv_est = Sigma_vv_est)
     
     res <- pmap(list(estimate_df = all_weights_t, 
-                     #jackest = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE),
                      jackest = c(FALSE, FALSE, FALSE, TRUE, TRUE, TRUE),
                      estimate = c(rep("Homogeneous", 4), "Heterogeneous", "Correlated")), JackknifeP) %>% 
       invoke(rbind, .) %>%
@@ -368,7 +473,7 @@ SimulationHSBW.cor <- function(population, sample_states) {
   weights <- unlist(map(indices, length))
   weights <- weights/sum(weights)
   SigmaSS <- Reduce(`+`, map2(SigmaSS_list, weights, ~.x * .y))
-  
+
   cor.mat.v.list <- map(1:nrow(data), ~data[.x, c("V1", "V2", "V3")] %>%
                           as.numeric(.[1,]) %>%
                           diag())
@@ -431,7 +536,7 @@ SimulationHSBW.cor <- function(population, sample_states) {
 }
 
 Jackknife <- function(data, estimate_df, target, jackest, cor.mat.w, cor.mat.x, 
-                      SigmaSS_list, Sigma_vv_est, estimate = NULL) {
+                      SigmaSS_list, Sigma_vv_est, estimate = NULL, x.only = FALSE) {
   
   re_list <- estimate_df$re
   estimates <- estimate_df$ests
@@ -451,40 +556,68 @@ Jackknife <- function(data, estimate_df, target, jackest, cor.mat.w, cor.mat.x,
   weight_list <- map(index_list, ~unlist(map(.x, length))) %>%
     map(~.x/sum(.x))
   index_jack <- map(index_list, unlist)
-  Sigma_vv_est_r <- map(index_jack, ~Sigma_vv_est[.x])
-  SigmaSS_list_r <- map(1:length(SigmaSS_list), ~SigmaSS_list[-.x])
-  SigmaSS_list_r <- map2(weight_list, SigmaSS_list_r, ~Reduce(`+`, map2(.y, .x, ~.x * .y)))
   
-  if (jackest == TRUE) {
-    CalcXhatp <- partial(CalcXhat, estimate = estimate, cor.mat.x = cor.mat.x, cor.mat.w = cor.mat.w)
-    data_list <- pmap(list(data = data_list, 
-                           SigmaSS = SigmaSS_list_r,
-                           Sigma_vv_est = Sigma_vv_est_r), CalcXhatp)
+  if (x.only == FALSE) {
+    Sigma_vv_est_r <- map(index_jack, ~Sigma_vv_est[.x])
+    SigmaSS_list_r <- map(1:length(SigmaSS_list), ~SigmaSS_list[-.x])
+    SigmaSS_list_r <- map2(weight_list, SigmaSS_list_r, ~Reduce(`+`, map2(.y, .x, ~.x * .y)))
+    
+    if (jackest == TRUE) {
+      CalcXhatp <- partial(CalcXhat, estimate = estimate, cor.mat.x = cor.mat.x, cor.mat.w = cor.mat.w)
+      data_list <- pmap(list(data = data_list, 
+                             SigmaSS = SigmaSS_list_r,
+                             Sigma_vv_est = Sigma_vv_est_r), CalcXhatp)
+    }
+    
+    IterDatList <- function(data_list, Xset, target, re_spec) {
+      wres <- map(data_list, ~EstimateSBW(Xset, .x, target, re_spec))
+      res <- map2(data_list, wres, ~sum(.x$J*.y)/sum(.y))
+      return(res)
+    }
+    
+    est_list <- map(re_list, ~IterDatList(data_list, balance_variable, target, .x))
+    mean_est <- map(est_list, ~mean(unlist(.x)))
+    var_est  <- map2(est_list, mean_est, ~ ((M - 1)/M) * sum((unlist(.x) - .y)^2))
+    
+    res <- tibble(
+      truth = rep(3, length(est_list)),
+      est = estimates,
+      bias = estimates - truth,
+      se = sqrt(unlist(var_est)),
+      b.est = unlist(mean_est),
+      lci = est - 1.96*se,
+      uci = est + 1.96*se,
+      covered = ifelse(truth > lci & truth < uci, 1, 0),
+      re = re_list,
+      Xset = balance_variable,
+      jackest = jackest
+    )
   }
-  
-  IterDatList <- function(data_list, Xset, target, re_spec) {
-    wres <- map(data_list, ~EstimateSBW(Xset, .x, target, re_spec))
-    res <- map2(data_list, wres, ~sum(.x$J*.y)/sum(.y))
-    return(res)
+  if (x.only == TRUE) {
+    IterDatList <- function(data_list, Xset, target, re_spec) {
+      wres <- map(data_list, ~EstimateSBW("X", .x, target, re_spec))
+      res  <- map2(data_list, wres, ~sum(.x$J*.y)/sum(.y))
+      return(res)
+    }
+    
+    est_list <- map(re_list, ~IterDatList(data_list, "X", target, .x))
+    mean_est <- map(est_list, ~mean(unlist(.x)))
+    var_est  <- map2(est_list, mean_est, ~ ((M - 1)/M) * sum((unlist(.x) - .y)^2))
+    
+    res <- tibble(
+      truth = rep(3, length(est_list)),
+      est = estimates,
+      bias = estimates - truth,
+      se = sqrt(unlist(var_est)),
+      b.est = unlist(mean_est),
+      lci = est - 1.96*se,
+      uci = est + 1.96*se,
+      covered = ifelse(truth > lci & truth < uci, 1, 0),
+      re = re_list,
+      Xset = "X",
+      jackest = jackest
+    )
   }
-  
-  est_list <- map(re_list, ~IterDatList(data_list, balance_variable, target, .x))
-  mean_est <- map(est_list, ~mean(unlist(.x)))
-  var_est  <- map2(est_list, mean_est, ~ ((M - 1)/M) * sum((unlist(.x) - .y)^2))
-  
-  res <- tibble(
-    truth = rep(3, length(est_list)),
-    est = estimates,
-    bias = estimates - truth,
-    se = sqrt(unlist(var_est)),
-    b.est = unlist(mean_est),
-    lci = est - 1.96*se,
-    uci = est + 1.96*se,
-    covered = ifelse(truth > lci & truth < uci, 1, 0),
-    re = re_list,
-    Xset = balance_variable,
-    jackest = jackest
-  )
   return(res)
 }
 
@@ -518,3 +651,4 @@ RunCorSims <- function(population, num_states, nsims) {
   res <- map(1:nsims, ~SimulationHSBW.cor(population, num_states))
   return(res)
 }
+

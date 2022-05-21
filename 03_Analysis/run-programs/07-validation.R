@@ -4,6 +4,7 @@
 # date modified: january 14, 2022
 
 source("03_Analysis/02_model-estimation.R")
+library(xtable); library(gt)
 
 # placebo tests ----------------------------------------------------------------------------------------
 estimates <- function(data, variables, tols) {
@@ -148,10 +149,10 @@ txtruth.c2 <- colMeans(tdat.c2[, py])
 
 trends_table <- round(rbind(truth, txtruth, txtruth.c2), 2) %>%
   as_tibble() %>%
-  mutate(Treatment = c("Non-expansion", "Expansion (primary)", "Expansion (early excluded)")) %>%
+  mutate(Treatment = c("Non-expansion", "Expansion (primary dataset)", "Expansion (early excluded)")) %>%
   select(Treatment, everything())
 
-print(xtable(trends_table,caption = "Mean uninsurance rates over time"), 
+print(xtable::xtable(trends_table,caption = "Mean non-elderly adult uninsurance rates, 2009-2014"), 
       type="latex", caption.placement = "top",
       include.rownames = FALSE)
 
@@ -262,6 +263,7 @@ tables_c2 <- GenCompTable(list(dat1.c2, dat2.c2, dat3.c2), list(weights1.c2, wei
 fintab <- GenFinTab(tables_c1, gls.weights)
 fintab.c2 <- GenFinTab(tables_c2, gls.weights.c2)
 
+# output tables for paper ------------------------------------------------------
 tot.tab <- fintab %>%
   left_join(
     fintab.c2 %>%
@@ -288,9 +290,67 @@ final <- tot.tab %>%
   ) %>%
   as_latex()
 
-final %>%
-  as.character() %>%
-  cat()
+final.alt <- bind_cols(
+  tot.tab %>%
+    mutate(`Mean Error` = (`2012 error` + `2013 error`) / 2) %>%
+    select(`Sigma estimate1` = `Sigma estimate`, Estimator1 = Estimator, `Mean Error`, RMSE) %>%
+    filter(!grepl("GLS|OLS", Estimator1)) %>%
+    arrange(RMSE),
+  tot.tab %>%
+    mutate(`Mean Error1` = (`2012 error1` + `2013 error1`) / 2) %>%
+    select(`Sigma estimate`, Estimator, `Mean Error1`, RMSE1) %>%
+    filter(!grepl("GLS|OLS", Estimator)) %>%
+    arrange(RMSE1)
+)
+
+final.alt.full <- bind_cols(
+  tot.tab %>%
+    mutate(`Mean Error` = (`2012 error` + `2013 error`) / 2) %>%
+    select(`Sigma estimate1` = `Sigma estimate`, Estimator1 = Estimator, `Mean Error`, RMSE) %>%
+    arrange(RMSE),
+  tot.tab %>%
+    mutate(`Mean Error1` = (`2012 error1` + `2013 error1`) / 2) %>%
+    select(`Sigma estimate`, Estimator, `Mean Error1`, RMSE1) %>%
+    arrange(RMSE1)
+)
+
+final.alt.gt <- final.alt %>%
+  mutate_if(is.numeric, ~round(., 2)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Primary data",
+    columns = c("Sigma estimate1", "Estimator1", "Mean Error", "RMSE")
+  ) %>%
+  tab_spanner(
+    label = "Early expansion \n excluded",
+    columns = c("Sigma estimate", "Estimator", "Mean Error1", "RMSE1")
+  ) %>%
+  cols_label(
+    `Sigma estimate1` = "Sigma estimate",
+    `Estimator1` = "Estimator",
+    RMSE1 = "RMSE",
+    `Mean Error1` = "Mean Error"
+  ) %>%
+  as_latex()
+
+final.alt.full.gt <- final.alt.full %>%
+  mutate_if(is.numeric, ~round(., 2)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Primary data",
+    columns = c("Sigma estimate1", "Estimator1", "Mean Error", "RMSE")
+  ) %>%
+  tab_spanner(
+    label = "Early expansion \n excluded",
+    columns = c("Sigma estimate", "Estimator", "Mean Error1", "RMSE1")
+  ) %>%
+  cols_label(
+    `Sigma estimate1` = "Sigma estimate",
+    `Estimator1` = "Estimator",
+    RMSE1 = "RMSE",
+    `Mean Error1` = "Mean Error"
+  ) %>%
+  as_latex() 
 
 rmse.order <- fintab %>%
   filter(!Estimator %in% c("OLS", "GLS")) %>%
@@ -302,8 +362,23 @@ rmse.order.c2 <- fintab.c2 %>%
   mutate(order = paste(`Sigma estimate`, Estimator)) %>%
   .$order
 
+# ordered by RMSE on primary data
 print(xtable::xtable(fintab.c2),
       latex.environments = NULL, booktabs = TRUE, include.rownames = FALSE)
+
+final %>%
+  as.character() %>%
+  cat()
+
+# mean error / RMSE versions
+final.alt.gt %>%
+  as.character() %>%
+  cat()
+
+final.alt.full.gt %>%
+  as.character() %>%
+  cat()
+
 
 # additional plots -------------------------------------------------------------
 FullWeightPlot <- function(data, weight_list, adjustment_set) {
@@ -315,6 +390,8 @@ FullWeightPlot <- function(data, weight_list, adjustment_set) {
            `BC-HSBW` = weight_list$`BC-HSBW`[[adjustment_set]]$weights) %>%
     select(cpuma, state, SBW:`BC-HSBW`) %>%
     gather(weight, weight_value, SBW:`BC-HSBW`) %>%
+    group_by(weight) %>%
+    mutate(weight_value = 100 * (weight_value / sum(weight_value))) %>%
     mutate_at("weight_value", 
               funs(Positive = if_else(. > 0, ., 0),
                    Negative = if_else(. <= 0, -1*., 0))) %>%
@@ -332,16 +409,49 @@ FullWeightPlot <- function(data, weight_list, adjustment_set) {
     scale_fill_brewer(palette = "Set1") +
     coord_flip() +
     scale_x_discrete(limits = levels("state")) +
-    xlab("") + ylab("Sum of Weights within State")
+    xlab("") + ylab("Distribution of positive and negative weights within state – total sum of each category")
 }
 
-weight.plot.c1 <- FullWeightPlot(imputed_dat_c1$data[[3]], weights3, 2)  
-weight.plot.c2 <- FullWeightPlot(imputed_dat_c2$data[[3]], weights3.c2, 2)  
+PaperWeightPlot <- function(data, weight_list, adjustment_set) {
+  data %>%
+    filter(treatment == 1) %>%
+    mutate(SBW = weight_list$SBW[[adjustment_set]]$weights,
+           `H-SBW` = weight_list$HSBW[[adjustment_set]]$weights,
+           `BC-HSBW` = weight_list$`BC-HSBW`[[adjustment_set]]$weights) %>%
+    select(cpuma, state, SBW:`BC-HSBW`) %>%
+    gather(weight, weight_value, SBW:`BC-HSBW`) %>%
+    group_by(weight) %>%
+    mutate(weight_value = 100 * (weight_value / sum(weight_value))) %>%
+    mutate_at("weight_value", 
+              funs(Positive = if_else(. > 0, ., 0),
+                   Negative = if_else(. <= 0, -1*., 0))) %>%
+    select(state, weight, Positive, Negative) %>%
+    gather(`Weight sign`, value, -state, -weight) %>%
+    group_by(state, weight, `Weight sign`) %>% 
+    dplyr::summarize(value = sum(value)) %>%
+    mutate(value = if_else(`Weight sign` == "Positive", value, -value)) %>%
+    mutate_at("state", factor) %>%
+    mutate_at("weight", ~factor(., levels = c("H-SBW", "BC-HSBW", "SBW"))) %>%
+    ggplot(aes(x = state, y = value, fill = `Weight sign`)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~weight) +
+    theme_minimal() +
+    scale_fill_grey() +
+    coord_flip() +
+    scale_x_discrete(limits = levels("state")) +
+    xlab("") + ylab("Distribution of positive and negative weights within state – total sum of each category")
+}
 
+weight.plot.c1 <- FullWeightPlot(imputed_dat_c1$data[[2]], weights3, 2)  
+weight.plot.c2 <- FullWeightPlot(imputed_dat_c2$data[[2]], weights3.c2, 2)  
+weight.plot.c1.paper <- PaperWeightPlot(imputed_dat_c1$data[[1]], weights3, 2)
+
+ggsave("../../02_Paper/01_Plots/weights-by-state-sbw-hsbw-c1.png", weight.plot.c1.paper,
+       width = 10, height = 6, type = "cairo")
 ggsave("../../02_Paper/01_Plots/weights-by-state-c1-all.png", weight.plot.c1,
-       width = 10, height = 6)
+       width = 10, height = 6, type = "cairo")
 ggsave("../../02_Paper/01_Plots/weights-by-state-c2-all.png", weight.plot.c2,
-       width = 10, height = 6)
+       width = 10, height = 6, type = "cairo")
 
 # additional investigations ----------------------------------------------------
 Y2013.1 <- imputed_dat_c1$data[[3]]$hins_unins_pct_2013[imputed_dat_c1$data[[3]]$treatment == 1]
@@ -442,3 +552,17 @@ print(xtable(itab.1,caption = "J_2014*gamma for all years"),
 print(xtable(itab.2 ,caption = "J_2013*gamma_2014"), 
       type="latex", caption.placement = "top",
       include.rownames = FALSE)
+
+# QA check: verify weights equal to primary results
+c1_results <- readRDS("../04_Output/c1-results.rds") 
+c2_results <- readRDS("../04_Output/c2-results.rds") 
+
+map2_lgl(c1_results$Preferred$None$SBW, weights3$SBW, ~identical(.x$weights, .y$weights))
+map2_lgl(c1_results$Preferred$None$`H-SBW`, weights3$HSBW, ~identical(.x$weights, .y$weights))
+map2_lgl(c1_results$Preferred$None$`BC-HSBW`, weights3$`BC-HSBW`, ~identical(.x$weights, .y$weights))
+map2_lgl(c1_results$Preferred$None$`BC-SBW`, weights3$`BC-SBW`, ~identical(.x$weights, .y$weights))
+
+map2_lgl(c2_results$`Early expansion`$None$SBW, weights3.c2$SBW, ~identical(.x$weights, .y$weights))
+map2_lgl(c2_results$`Early expansion`$None$`H-SBW`, weights3.c2$HSBW, ~identical(.x$weights, .y$weights))
+map2_lgl(c2_results$`Early expansion`$None$`BC-HSBW`, weights3.c2$`BC-HSBW`, ~identical(.x$weights, .y$weights))
+map2_lgl(c2_results$`Early expansion`$None$`BC-SBW`, weights3.c2$`BC-SBW`, ~identical(.x$weights, .y$weights))

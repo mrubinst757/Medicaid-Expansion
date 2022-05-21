@@ -153,10 +153,7 @@ calculate_sigma_ss <- function(data, variables) {
   
   SigmaSS_list <- discard(SigmaSS_list, ~any(is.na(.)))
   SigmaSS_list <- map(SigmaSS_list, ~Reduce(`+`, .x)/length(.x))
-  weights <- unlist(map(indices, length))
-  weights <- weights[weights != 1]
-  weights <- weights/sum(weights)
-  SigmaSS <- Reduce(`+`, map2(SigmaSS_list, weights, ~.x * .y))
+  SigmaSS <- Reduce(`+`, SigmaSS_list) / length(SigmaSS_list)
   
   return(SigmaSS)
 }

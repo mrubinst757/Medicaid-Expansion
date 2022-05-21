@@ -26,6 +26,7 @@ merged_data_c1 <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
   nest(-key) 
 
 merged_data_c2 <- readRDS("../01_ProcessedData/calibrated-data-c2.rds") %>%
+  filter(set == "true") %>%
   unnest() %>%
   nest(-key) 
 
@@ -66,6 +67,13 @@ total_etc <- balance_etc_c1 %>%
               select(-contains("weighted"))) %>%
   mutate_at("Variables", ~stringr::str_replace_all(., var_names))
 
+
+balance_etc_c1 %>%
+  mutate_if(is.numeric, ~(ifelse(abs(.) > 0.1, 1, 0))) %>%
+  summarize_if(is.numeric, sum)
+
+sd(merged_data_c1$data[[3]]$female_pct)
+
 # output plots and tables ---------------------------------------------------
 print(xtable::xtable(final_bcomp), include.rownames = FALSE,
       latex.environments = NULL, 
@@ -75,10 +83,33 @@ print(xtable::xtable(total_etc), include.rownames = FALSE,
       latex.environments = NULL, 
       booktabs = TRUE)
 
-hsbw_balplot(balance_etc_c1, "c1", 0)
-hsbw_balplot(balance_etc_c2, "c2", 0)
-hsbw_balplot(balance_etc_c1, "c1", 0, "SMD")
-hsbw_balplot(balance_etc_c2, "c2", 0, "SMD")
-hsbw_balplot_smd(balance_etc_c1, "c1")
-hsbw_balplot_smd(balance_etc_c2, "c2")
+hsbw_balplot_smd <- function(results, file_extension) {
+  plot <- results %>%
+    nest(`Standardized mean difference` = c("Unweighted SMD", "Weighted SMD"), 
+         `Percentage point difference` = c("Unweighted Diff", "Weighted Diff"))  %>%
+    gather(key, value, -Variables) %>%
+    mutate_at("value", ~map(., ~set_names(.x, c("Unweighted", "Weighted")))) %>%
+    unnest(cols = c(value)) %>%
+    mutate_at("Variables", ~stringr::str_replace_all(., var_names)) %>%
+    gather(weighted, difference, Unweighted, Weighted) %>%
+    mutate_at("weighted", ~factor(., levels = c("Weighted", "Unweighted"))) %>%
+    group_by(Variables) %>%
+    mutate(pctdiff = difference[key == "Standardized mean difference" & weighted == "Unweighted"]) %>%
+    ungroup() %>%
+    ggplot(aes(x = reorder(Variables, abs(pctdiff)), y = difference, fill = weighted)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_wrap(~key, scales = "free_x") +
+    ggthemes::theme_pander() +
+    scale_fill_grey(name = "Difference", breaks = c("Unweighted", "Weighted")) +
+    coord_flip() +
+    theme(panel.grid.major = element_line(colour = "black")) +
+    ylab("Mean Difference (treatment mean minus control mean)") +
+    xlab("Variables \n (ordered by absolute magnitude \n of unweighted percentage point imbalance)")
+  return(plot)  
+}
 
+p.c1 <- hsbw_balplot_smd(balance_etc_c1, "c1")
+p.c2 <- hsbw_balplot_smd(balance_etc_c2, "c2")
+
+ggsave(paste0("../../02_Paper/01_Plots/balance-plot-all-etu-c1.png"), p.c1, width = 12, height = 7, type = "cairo")
+ggsave(paste0("../../02_Paper/01_Plots/balance-plot-all-etu-c2.png"), p.c2, width = 12, height = 7, type = "cairo")

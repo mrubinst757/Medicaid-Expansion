@@ -1,4 +1,4 @@
-source("06_variance-simulations.R")
+source("03_Analysis/06_variance-simulations.R")
 
 ################################################################################
 ########################## process and plot results ############################
@@ -13,16 +13,19 @@ simulation_parameters <- expand.grid(
   SNR.xw = c(0.95, 0.9, 0.85),
   rho = 0.25,
   sample_states = 25,
-  num_sims = 1
+  num_sims = 500
 )
 
 all_sims <- pmap(simulation_parameters, RunSims)
-saveRDS(all_sims, "../04_Output/simulations-12-26-21.rds")
+saveRDS(all_sims, "../04_Output/simulations-05-06-22.rds")
 
 # create plots summarizing results ---------------------------------------------
 all_sims <- readRDS("../04_Output/simulations-12-26-21.rds")
 all_sims2 <- readRDS("../04_Output/simulations-12-26-21-p2.rds")
+all_sims3 <- readRDS("../04_Output/simulations-05-06-22.rds")
+
 all_sims <- map2(all_sims, all_sims2, ~append(.x, .y))
+all_sims <- map2(all_sims, all_sims3, ~append(.x, .y))
 
 sim_performance <- all_sims %>%
   map(~invoke(rbind, .)) %>%
@@ -44,17 +47,6 @@ sim_performance <- map2(1:nrow(simulation_parameters), sim_performance,
   mutate_at("SS_cor", ~paste0("Rho_x = ", .)) %>%
   mutate_at("SNR.xw", ~paste0("Tau = ", .)) %>%
   rename(`H-SBW Rho` = re) 
-
-
-sim_performance %>%
-  select(hetero, SS_cor, X_cor, SNR.xw, rho, `Balance variables`,
-         `H-SBW Rho`, var.obs, se.est) %>%
-  group_by(hetero, SS_cor, X_cor, SNR.xw, rho, `Balance variables`,
-           `H-SBW Rho`) %>%
-  ggplot(aes(y = var.bias, x = `Balance variables`, fill = `H-SBW Rho`)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  facet_grid(SS_cor~SNR.xw) +
-  theme_bw()  
 
 bias.plot <- sim_performance %>%
   filter(`Balance variables` %in% c("X", "Xhat.hom", "Xhat.het", "Xhat.cor", "W"), hetero == TRUE) %>%
@@ -83,7 +75,6 @@ var.plot <- sim_performance %>%
 ggsave("../../02_Paper/01_Plots/var-plot.png", var.plot)
 
 mse.plot <- sim_performance %>%
-  #filter(`Balance variables` %in% c("X", "Xhat.hom", "Xhat.het", "W"), hetero == TRUE) %>%
   filter(`Balance variables` %in% c("X", "Xhat.hom", "Xhat.het", "Xhat.cor", "W"), hetero == TRUE) %>%
   ggplot(aes(y = mse, x = `Balance variables`, fill = `H-SBW Rho`)) +
   geom_bar(stat = "identity", position = "dodge") +
@@ -105,7 +96,7 @@ coverage.plot.1 <- sim_performance %>%
   theme_bw() +
   scale_x_discrete(guide = guide_axis(n.dodge=2)) +
   xlab("Covariate set") +
-  ylab("Coverage rate \n (across 250 simulations for each specification)") +
+  ylab("Coverage rate \n (across 1000 simulations for each specification)") +
   geom_hline(yintercept = 0.95, color = "firebrick", linetype = "dashed") +
   scale_fill_brewer(palette = "Dark2")
 
@@ -122,7 +113,7 @@ coverage.plot.2 <- sim_performance %>%
   theme_bw() +
   scale_x_discrete(guide = guide_axis(n.dodge=2)) +
   xlab("Covariate set") +
-  ylab("Coverage rate \n (across 250 simulations for each specification)") +
+  ylab("Coverage rate \n (across 1000 simulations for each specification)") +
   geom_hline(yintercept = 0.95, color = "firebrick", linetype = "dashed") +
   scale_fill_brewer(palette = "Paired")
 
@@ -136,16 +127,14 @@ ci.length.plot <- sim_performance %>%
   theme_bw() +
   scale_x_discrete(guide = guide_axis(n.dodge=2)) +
   xlab("Covariate set") +
-  ylab("Average CI Length \n (across 500 simulations for each specification)") +
+  ylab("Average CI Length \n (across 1000 simulations for each specification)") +
   scale_fill_brewer(palette = "Dark2")
 
 ggsave("../../02_Paper/01_Plots/ci-length-plot.png", ci.length.plot)
 
-
 ################################################################################
 #####################additional simulations: x observed ########################
 ################################################################################
-
 simulation_parameters_x <- expand.grid(
   pop_size = 5000,
   sample_states = 25,
@@ -154,7 +143,7 @@ simulation_parameters_x <- expand.grid(
   X_cor = 0.25,
   SNR.xw = 1,
   rho = c(0, 0.25, 0.5, 0.75, 0.99),
-  num_sims = 1000
+  num_sims = 1
 )
 
 #all_sims_X <- pmap(simulation_parameters_x, RunSimsX)
@@ -220,11 +209,11 @@ ggsave("../../02_Paper/01_Plots/variance-x-bias-plot.png", variance.x.bias.plot)
 ################################################################################
 ###############additional simulations: xhat cor consistency ####################
 ################################################################################
-cor.dat <- GenerateHierPopulation(number_states = 4000, SS_cor = 0.5, SNR.xw = 0.85,
+cor.dat <- GenerateHierPopulation(number_states = 10000, SS_cor = 0.5, SNR.xw = 0.85,
                                   hetero = TRUE, rho = 0.25, X_cor = 0.25)
 
+
 cor.sims <- map(c(25, 50, 100, 200), ~RunCorSims(cor.dat, .x, nsims = 500))
-saveRDS(cor.sims, "../04_Output/xhat-cor.rds")
 cor.sims <- readRDS("../04_Output/xhat-cor.rds")
 
 map(cor.sims, ~invoke(rbind, .)) %>%
@@ -233,4 +222,5 @@ map(cor.sims, ~invoke(rbind, .)) %>%
   filter(Xset == "Xhat.cor") %>%
   group_by(M, re, Xset) %>%
   summarize(bias = mean(bias), mse = mean(mse), var = var(ests)) %>%
-  arrange(re)
+  arrange(re) 
+
