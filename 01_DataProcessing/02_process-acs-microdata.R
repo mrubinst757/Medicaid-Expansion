@@ -8,9 +8,9 @@ library(tidyverse)
 library(assertthat)
 
 setwd("C:/Users/mdrub/Box/Medicaid-Project/00_Data/")
-input_dir  <- 'ACS/Raw_Microdata_2007-2016/'
-input_dir_pumas  <- 'PUMAS/'
-output_dir <- 'ACS/Processed_Microdata/'
+input_dir  <- "ACS/Raw_Microdata_2007-2016/"
+input_dir_pumas  <- "PUMAS/"
+output_dir <- "ACS/Processed_Microdata/"
 
 # arrange file names
 gen_state_list <- function(person_files, household_files, state_num) {
@@ -20,10 +20,10 @@ gen_state_list <- function(person_files, household_files, state_num) {
 }
 
 years = 2009:2014
-chara_years = stringr::str_trunc(years, 2, side = 'left', ellipsis = '')
+chara_years = stringr::str_trunc(years, 2, side = "left", ellipsis = "")
 
-person_file_patterns    <- map(chara_years, ~sprintf('ss%sp[a-z][a-z].csv', .x))
-household_file_patterns <- map(chara_years, ~sprintf('ss%sh[a-z][a-z].csv', .x))
+person_file_patterns    <- map(chara_years, ~sprintf("ss%sp[a-z][a-z].csv", .x))
+household_file_patterns <- map(chara_years, ~sprintf("ss%sh[a-z][a-z].csv", .x))
 person_files            <- map(person_file_patterns, ~list.files(input_dir, pattern = .x))
 household_files         <- map(household_file_patterns, ~list.files(input_dir, pattern = .x))
 
@@ -31,11 +31,11 @@ state_file_list <- map(1:50, ~gen_state_list(person_files, household_files, .x))
   map(~paste0(input_dir, .x))
 
 # puma/cpuma crosswalks --------------------------------------------------------------------------------------
-pumas00  <- read_csv(paste0(input_dir_pumas, 'CPUMA0010_PUMA2000_assignments.csv')) %>%
+pumas00  <- read_csv(paste0(input_dir_pumas, "CPUMA0010_PUMA2000_assignments.csv")) %>%
   select(state = State_FIPS, puma = PUMA, cpuma = CPUMA0010) %>%
   distinct()
 
-pumas10  <- read_csv(paste0(input_dir_pumas, 'CPUMA0010_PUMA2010_components.csv')) %>%
+pumas10  <- read_csv(paste0(input_dir_pumas, "CPUMA0010_PUMA2010_components.csv")) %>%
   select(state = State_FIPS, puma = PUMA, cpuma = CPUMA0010) %>%
   distinct()
 
@@ -47,8 +47,8 @@ process_acs_person <- function(data, year) {
   
   data %>%
     set_names(tolower(names(.))) %>%
-    select(state = st, puma, serialno, cit, agep, starts_with('hins'), hicov, mar, schl, schg, sex,  
-           msp, nativity, povpip, rac1p, esr, hispanic = hisp, disability = dis, contains('wgtp')) %>%
+    select(state = st, puma, serialno, cit, agep, starts_with("hins"), hicov, mar, schl, schg, sex,  
+           msp, nativity, povpip, rac1p, esr, hispanic = hisp, disability = dis, contains("wgtp")) %>%
     dplyr::mutate_at(vars(povpip, agep, pwgtp, hispanic), funs(as.numeric)) %>%
     mutate(citizenship  = if_else(cit == 5, 0, 1),
            foreign_born = if_else(nativity == 2, 1, 0),
@@ -62,54 +62,54 @@ process_acs_person <- function(data, year) {
            hispanic     = if_else(hispanic == 1, 0, 1)
            )  %>%
     filter(sample == 1) %>%
-    dplyr::mutate_at(vars(contains('hins')), funs(if_else(. == 2, 0, 1))) %>%
+    dplyr::mutate_at(vars(contains("hins")), funs(if_else(. == 2, 0, 1))) %>%
     dplyr::mutate(race = case_when(
-      rac1p == 1 ~ 'white',
-      rac1p == 2 ~ 'black',
-      rac1p %in% c(3:9) ~ 'other'
+      rac1p == 1 ~ "white",
+      rac1p == 2 ~ "black",
+      rac1p %in% c(3:9) ~ "other"
     ),
     educ = case_when(
-      schl %in% c('01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15')  ~ 'less_than_hs',
-      schl %in% c('16', '17')  ~ 'hs_degree',
-      schl %in% c('18', '19', '20')  ~ 'some_college',
-      schl %in% c('21', '22', '23', '24')  ~ 'college'
+      schl %in% c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15")  ~ "less_than_hs",
+      schl %in% c("16", "17")  ~ "hs_degree",
+      schl %in% c("18", "19", "20")  ~ "some_college",
+      schl %in% c("21", "22", "23", "24")  ~ "college"
     ),
     student = if_else(is.na(schg), 0, 1),
     inc_pov = case_when(
-      povpip < 100 ~ '100',
-      between(povpip, 100, 199) ~ '200',
-      between(povpip, 200, 299) ~ '300',
-      between(povpip, 300, 399) ~ '400',
-      between(povpip, 400, 499) ~ '500',
-      povpip >= 500 ~ '500_plus',
-      is.na(povpip) ~ 'missing'
+      povpip < 100 ~ "100",
+      between(povpip, 100, 199) ~ "200",
+      between(povpip, 200, 299) ~ "300",
+      between(povpip, 300, 399) ~ "400",
+      between(povpip, 400, 499) ~ "500",
+      povpip >= 500 ~ "500_plus",
+      is.na(povpip) ~ "missing"
     ),
     age_cat = case_when(
-      between(agep, 19, 24) ~ '19_24',
-      between(agep, 25, 29) ~ '25_29',
-      between(agep, 30, 34) ~ '30_34',
-      between(agep, 35, 39) ~ '35_39',
-      between(agep, 40, 44) ~ '40_44',
-      between(agep, 45, 49) ~ '45_49',
-      between(agep, 50, 54) ~ '50_54',
-      between(agep, 55, 59) ~ '55_59',
-      between(agep, 60, 64) ~ '60_64'
+      between(agep, 19, 24) ~ "19_24",
+      between(agep, 25, 29) ~ "25_29",
+      between(agep, 30, 34) ~ "30_34",
+      between(agep, 35, 39) ~ "35_39",
+      between(agep, 40, 44) ~ "40_44",
+      between(agep, 45, 49) ~ "45_49",
+      between(agep, 50, 54) ~ "50_54",
+      between(agep, 55, 59) ~ "55_59",
+      between(agep, 60, 64) ~ "60_64"
     ),
     coarse_race_white = if_else(rac1p == 1, 1, 0),
     coarse_age_cat    = if_else(between(agep, 35, 64), 1, 0),
     coarse_inc_pov    = if_else(povpip <= 138, 1, 0),
-    coarse_educ       = if_else(schl %in% c('18', '19', '20', '21', '22', '23', '24'), 1, 0),
+    coarse_educ       = if_else(schl %in% c("18", "19", "20", "21", "22", "23", "24"), 1, 0),
     age_cat2 = case_when(
-      between(agep, 19, 29) ~ '19_29',
-      between(agep, 30, 39) ~ '30_39',
-      between(agep, 40, 49) ~ '40_49',
-      between(agep, 50, 64) ~ '50_64'
+      between(agep, 19, 29) ~ "19_29",
+      between(agep, 30, 39) ~ "30_39",
+      between(agep, 40, 49) ~ "40_49",
+      between(agep, 50, 64) ~ "50_64"
     ),
     inc_pov2 = case_when(
-      povpip <= 138 ~ '138',
-      between(povpip, 139, 299) ~ '139_299',
-      between(povpip, 300, 499) ~ '300_499',
-      povpip >= 500 ~ '500_plus'
+      povpip <= 138 ~ "138",
+      between(povpip, 139, 299) ~ "139_299",
+      between(povpip, 300, 499) ~ "300_499",
+      povpip >= 500 ~ "500_plus"
     ),
     hins_any   = if_else(hins1 == 1 | hins2 == 1 | hins3 == 1 | hins4 == 1 | hins5 == 1 | hins6 == 1 | hins7 == 1, 1, 0),
     hins_unins = if_else(hins_any == 1, 0, 1),
@@ -118,8 +118,8 @@ process_acs_person <- function(data, year) {
     hins_othg  = if_else(hins_priv == 0 & hins_mdcd == 0 & uninsured == 0, 1, 0),
     female = if_else(sex == 2, 1, 0)
     ) %>%
-    fastDummies::dummy_cols(select_columns = c('educ', 'inc_pov', 'age_cat', 'race', 'inc_pov2', 'age_cat2')) %>%
-    left_join(cpuma_data, by = c('state', 'puma')) %>%
+    fastDummies::dummy_cols(select_columns = c("educ", "inc_pov", "age_cat", "race", "inc_pov2", "age_cat2")) %>%
+    left_join(cpuma_data, by = c("state", "puma")) %>%
     dplyr::mutate(year = year)
 }
 
@@ -129,9 +129,9 @@ process_acs_household <- function(data, year) {
   
   data %>%
     set_names(tolower(names(.))) %>%
-    select(state = st, serialno, puma, noc, contains('wgtp')) %>%
-    mutate_at(vars(noc, contains('wgtp')), funs(as.numeric)) %>%
-    left_join(cpuma_data, by = c('state', 'puma')) %>%
+    select(state = st, serialno, puma, noc, contains("wgtp")) %>%
+    mutate_at(vars(noc, contains("wgtp")), funs(as.numeric)) %>%
+    left_join(cpuma_data, by = c("state", "puma")) %>%
     mutate(year = year,
            one_child = if_else(noc == 1, 1, 0),
            two_child = if_else(noc == 2, 1, 0),
@@ -142,14 +142,14 @@ process_acs_household <- function(data, year) {
 
 # process data and save to disk ------------------------------------------------------------------------------
 annual_process <- function(file_names) {
-  chara_years = unique(stringr::str_extract(file_names, 'ss([0-9][0-9])'))
-  num_years = as.numeric(gsub('ss', '', paste0('20', chara_years)))
+  chara_years = unique(stringr::str_extract(file_names, "ss([0-9][0-9])"))
+  num_years = as.numeric(gsub("ss", "", paste0("20", chara_years)))
   
-  person_files <- file_names[grep('[0-9]p[a-z]', file_names)]
-  household_files <- file_names[grep('[0-9]h[a-z]', file_names)]
+  person_files <- file_names[grep("[0-9]p[a-z]", file_names)]
+  household_files <- file_names[grep("[0-9]h[a-z]", file_names)]
   
-  output_file_str <- stringr::str_trunc(person_files, 6, ellipsis = '', side = 'left')[1] %>%
-    gsub('csv', 'rds', .)
+  output_file_str <- stringr::str_trunc(person_files, 6, ellipsis = "", side = "left")[1] %>%
+    gsub("csv", "rds", .)
   
   person_data <- map(person_files, ~read_csv(.x, col_types = cols(
     ST = col_character(),
@@ -166,8 +166,8 @@ annual_process <- function(file_names) {
   
   person_data <- invoke(rbind, person_data)
   
-  write_rds(person_data, paste0(output_dir, 'person_acs_', output_file_str))
-  write_rds(household_data, paste0(output_dir, 'household_acs_', output_file_str))  
+  write_rds(person_data, paste0(output_dir, "person_acs_", output_file_str))
+  write_rds(household_data, paste0(output_dir, "household_acs_", output_file_str))  
 }
 
 # iterate program through all states and save to disc --------------------------------------------

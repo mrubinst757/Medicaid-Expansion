@@ -27,10 +27,10 @@ generate_full_cov_matrix <-function(original, replicates, variables, row_num) {
     as.data.frame() %>%
     rownames_to_column() %>% 
     gather(key, value, -rowname) %>%
-    mutate(year1 = stringr::str_extract_all(rowname, '201[1-4]', simplify = TRUE),
-           year2 = stringr::str_extract_all(key, '201[1-4]', simplify = TRUE)) %>% 
-    mutate(value = if_else(year1 != year2 & !(year1 == '' | year2 == ''), 0, value),
-           value = if_else((year1 == '2014' | year2 == '2014') & (year1 != '2014' | year2 != '2014'), 0, value)) %>%
+    mutate(year1 = stringr::str_extract_all(rowname, "201[1-4]", simplify = TRUE),
+           year2 = stringr::str_extract_all(key, "201[1-4]", simplify = TRUE)) %>% 
+    mutate(value = if_else(year1 != year2 & !(year1 == "" | year2 == ""), 0, value),
+           value = if_else((year1 == "2014" | year2 == "2014") & (year1 != "2014" | year2 != "2014"), 0, value)) %>%
     select(-year1, -year2) %>%
     spread(key, value) %>%
     select(-rowname) %>%
@@ -47,12 +47,12 @@ generate_count_covariance <- function(original_data, variables, count_xwalk, row
   counts <- original_data %>% 
     ungroup() %>% 
     arrange(state, cpuma) %>%
-    select(contains('count')) %>% 
+    select(contains("count")) %>% 
     slice(row_num) %>%
     gather(sample_var, counts)
   
   row_counts = count_xwalk %>%
-    left_join(counts, by = 'sample_var') %>%
+    left_join(counts, by = "sample_var") %>%
     replace_na(list(counts = 1e7)) %>%
     mutate(root_counts = sqrt(counts)) %>%
     filter(Variable %in% variables) %>%
@@ -160,8 +160,8 @@ calculate_sigma_ss <- function(data, variables) {
 
 # impute covariates ----------------------------------------------------------------------------------------
 transform_data <- function(original_data, variables, kappa_list) {
-  assert_that(is.list(kappa_list[[1]]), msg = 'kappa_list must be a list of lists')
-  assert_that(!is.null(names(kappa_list)), msg = 'kappa_list must be named')
+  assert_that(is.list(kappa_list[[1]]), msg = "kappa_list must be a list of lists")
+  assert_that(!is.null(names(kappa_list)), msg = "kappa_list must be named")
   
   original_data <- arrange(ungroup(original_data), treatment, state, cpuma)
   
@@ -183,13 +183,13 @@ transform_data <- function(original_data, variables, kappa_list) {
     
     scaled_data <- scale_data(data, all_variables)
     
-    center <- as.matrix(attr(scaled_data, 'scaled:center'))
+    center <- as.matrix(attr(scaled_data, "scaled:center"))
     
     adjusted_data <- scaled_data %>%
       as_tibble() %>%
       mutate(id = 1:nrow(.)) %>%
       nest(-id) %>% 
-      mutate_at('data', ~map(., ~t(as.matrix(.x))))
+      mutate_at("data", ~map(., ~t(as.matrix(.x))))
     
     for(i in 1:length(kappa_list)) {
       adjusted_data <- adjusted_data %>%
@@ -211,7 +211,7 @@ transform_data <- function(original_data, variables, kappa_list) {
     
     transformed_data$data <- map(transformed_data$data, 
                                  ~mutate(.x, cpuma = data$cpuma, state = data$state) %>%
-                                   left_join(other_variables, by = c('cpuma', 'state')) %>%
+                                   left_join(other_variables, by = c("cpuma", "state")) %>%
                                    mutate_if(is.numeric, ~if_else(abs(.) < 1e-10, 0, .)) %>%
                                    arrange(state, cpuma))
     
@@ -233,10 +233,10 @@ transform_correlated_data <- function(original_data, Sigma_UU_estimates, variabl
   
   blocks <- as.numeric(table(data$state))
   finish <- cumsum(blocks)
-  start <- lag(finish) + 1; start[1] <- 1
+  start  <- lag(finish) + 1; start[1] <- 1
   indices <- map2(start, finish, ~c(.x:.y)) 
   
-  Wmat <- as.matrix(data[, variables])
+  Wmat  <- as.matrix(data[, variables])
   W0hat <- colMeans(Wmat)
   Sigma_WW <- cov(Wmat)
   Sigma_vv_avg <- Reduce(`+`, Sigma_UU_estimates)/length(Sigma_UU_estimates)
@@ -280,3 +280,10 @@ transform_correlated_data <- function(original_data, Sigma_UU_estimates, variabl
   data <- cbind(select(data, -variables), Xhat)
   return(data)
 }
+
+# create data list with given state removed
+data_subset <- function(data_list, state_name) {
+  map(data_list, ~filter(.x, !state %in% state_name))
+}
+
+

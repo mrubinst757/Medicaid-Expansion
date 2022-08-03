@@ -47,12 +47,12 @@ calculate_txfx <- function(data_list, weight_list, y0est) {
     as.data.frame() %>%
     rownames_to_column() %>%
     rename(variable_subset = rowname) %>%
-    mutate_at('variable_subset', ~gsub('\\.[0-9]?[0-9]', '', .)) 
+    mutate_at("variable_subset", ~gsub("\\.[0-9]?[0-9]", "", .)) 
 }
 
 # read variable names
 read_varnames <- function(group = "") {
-  variable_names <- read_csv('../02_Specs/tol_specs.csv') %>%
+  variable_names <- read_csv("../02_Specs/tol_specs.csv") %>%
     filter(`Reference Variable` == 0) %>%
     filter(!Group == group) %>%
     arrange(Variable) %>%
@@ -241,7 +241,7 @@ aggregate_plot <- function(data_subset, weights, weight_type, file_extension) {
     mutate_at(vars(matches("SBW")), 
               funs(pos = if_else(. > 0, ., 0),
                    neg = if_else(. <= 0, -1*., 0))) %>%
-    select(state, contains('pos'), contains('neg')) %>%
+    select(state, contains("pos"), contains("neg")) %>%
     gather(key, value, -state) %>%
     mutate(pos = if_else(grepl("pos", key), "pos", "neg")) %>% 
     mutate_at("key", ~gsub("_pos|_neg", "", .)) %>% 
@@ -253,7 +253,7 @@ aggregate_plot <- function(data_subset, weights, weight_type, file_extension) {
     mutate_at("state", factor) %>%
     ggplot(aes(x = state, y = value, fill = pos)) +
     guides(fill = FALSE) +
-    geom_bar(stat = 'identity') +
+    geom_bar(stat = "identity") +
     facet_wrap(~key) +
     theme_minimal() +
     scale_fill_brewer(palette = "Set1") +

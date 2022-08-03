@@ -3,27 +3,25 @@
 # author: max rubinstein
 # date modified: december 14, 2020
 
-source('03_Analysis/03_jackknife.R')
+source("03_Analysis/03_jackknife.R")
 
-# setup -----------------------------------------------------------------------------------------------
-variables <- read_csv('../02_Specs/tol_specs.csv') %>%
-  mutate(`Reference Variable` = case_when(grepl('child', Variable) ~ 0, TRUE ~ `Reference Variable`)) %>%
+variables <- read_csv("../02_Specs/tol_specs.csv") %>%
+  mutate(`Reference Variable` = case_when(grepl("child", Variable) ~ 0, TRUE ~ `Reference Variable`)) %>%
   filter(`Reference Variable` == 0) %>%
   .$Variable %>%
   sort()
 
-tol_list <- read_csv('../02_Specs/tol_specs.csv') 
+tol_list <- read_csv("../02_Specs/tol_specs.csv") %>%
+  filter(Variable %in% variables) %>%
+  arrange(Variable) %>%
+  .$`Base Tol` %>%
+  set_names(variables)
 
-tol_list <- map(0:5, ~tol_list %>% mutate(`Base Tol` = if_else(grepl(.x, Group), 100, `Base Tol`))) %>%
-  map(~filter(.x, Variable %in% variables)) %>%
-  map(~arrange(.x, Variable)) %>%
-  map(~.x$`Base Tol`) %>%
-  map(~set_names(.x, variables))
+tol_list <- list(tol_list)
 
 cov_models <- c("sigma_uu_i_modeled", "sigma_uu_avg", "sigma_zero")
 
-cov_groups <- c("None", "Republican", "Unins & Unemp", "Urb-Age-Educ-Cit-Mar-Stu-Dis-F",
-                "Race-Eth-For-Inc-Pov", "Child-PGrowth-HHRatio")
+cov_groups <- c("None")
 
 model_names <- c("SBW", "H-SBW", "BC-SBW", "BC-HSBW")
 
@@ -85,8 +83,8 @@ etc_jackknife_dat_c1 <- readRDS("../01_ProcessedData/etc-jackknife-data-c1.RDS")
 etc_jackknife_dat_c2 <- readRDS("../01_ProcessedData/etc-jackknife-data-c2.RDS")
 
 # calculate weights on jackknife data
-etc_results_c1 <- etc_weights(etc_jackknife_dat_c1, tol_list, targets)
-etc_results_c2 <- etc_weights(etc_jackknife_dat_c2, tol_list, targets)
+etc_results_c1 <- etc_weights(etc_jackknife_dat_c1, tol_list, cov_groups, targets)
+etc_results_c2 <- etc_weights(etc_jackknife_dat_c2, tol_list, cov_groups, targets)
 
 saveRDS(etc_results_c1, "../04_Output/etc-jackknife-c1.rds")
 saveRDS(etc_results_c2, "../04_Output/etc-jackknife-c2.rds")

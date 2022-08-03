@@ -27,8 +27,8 @@ hsbw_baltab <- function(data, weights_etu, variables) {
   treatment_data <- subset(data, treatment == 1) 
   tx_mean <- colMeans(treatment_data[variables])
   targets <- colMeans(control_data[variables])
-  var1 <- diag(cov(treatment_data[variables]))#/nrow(treatment_data)
-  var0 <- diag(cov(control_data[variables]))#/nrow(control_data)
+  var1 <- diag(cov(treatment_data[variables]))
+  var0 <- diag(cov(control_data[variables]))
   
   tibble(
     target = targets,
@@ -55,7 +55,7 @@ hsbw_balplot <- function(hsbw_balance, file_extension, diff_criterion,
       mutate_at("Variables", ~stringr::str_replace_all(., var_names)) %>%
       mutate_at("key", ~factor(., levels = c("Weighted", "Unweighted"))) %>%
       ggplot(aes(x = reorder(Variables, value), y = value, fill = rev(key))) +
-      geom_bar(stat = "identity", position = "dodge")+
+      geom_bar(stat = "identity", position = "dodge") +
       #scale_fill_brewer(palette = "Set1", name = "Difference") +
       scale_fill_grey(name = "Difference") +
       coord_flip() +
@@ -74,7 +74,7 @@ hsbw_balplot <- function(hsbw_balance, file_extension, diff_criterion,
       mutate_at("Variables", ~stringr::str_replace_all(., var_names)) %>%
       mutate_at("key", ~factor(., levels = c("Weighted", "Unweighted"))) %>%
       ggplot(aes(x = reorder(Variables, value), y = value, fill = rev(key))) +
-      geom_bar(stat = "identity", position = "dodge")+
+      geom_bar(stat = "identity", position = "dodge") +
       #scale_fill_brewer(palette = "Set1", name = "Difference") +
       scale_fill_grey(name = "Difference") +
       coord_flip() +

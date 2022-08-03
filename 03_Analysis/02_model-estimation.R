@@ -130,6 +130,7 @@ debias_sbw_weights <- function(sbw_weights, X_1, tols, targets, distance, autotu
   list(weights = w_new*length(weights), imbalance = imbalance, lambda = lambda*10)
 }
 
+# check if covariate matrix has perfectly collinear elements; if so drop one
 collinearity_check <- function(X_1, targets) {
   constants <- unlist(map(1:ncol(X_1), ~var(X_1[, .x])))
   constant_index <- unlist(map(constants, ~near(.x, 0))) %>%
@@ -153,11 +154,12 @@ collinearity_check <- function(X_1, targets) {
   list(X_1 = X_1, targets = targets)
 }
 
+# ridge regularization of SBW / H-SBW weights
 adjust_weights <- function(weights, lambda, X_1, targets, sigma_inv) {
   result <- collinearity_check(X_1, targets)
   X_1 <- result$X_1; targets <- result$targets
   I_d <- lambda*diag(rep(1, ncol(X_1)))
-  I_d[1, 1] <- 0 #don"t want to regularize the summing to one
+  I_d[1, 1] <- 0 #don"t want to regularize the summing to one constaint
   XX <- t(X_1) %*% sigma_inv %*% X_1
   XX_inv <- solve(XX + I_d)
   adjustment1 <- t(targets) %*% XX_inv %*% t(X_1) %*% sigma_inv
@@ -174,7 +176,8 @@ generate_weight_list <- function(tols, data_list, targets, distance,
   sbw <- list(); hsbw <- list(); hsbw1 <- list()
   tols_new <- rep(list(tols), length(data_list))
   for (i in 1:length(data_list)) {
-    sbw[[i]]  <- generate_sbw_weights(data_list[[i]], tols_new[[i]], targets, sigma2.y = 1, re = 0, max_iter = max_iter)
+    sbw[[i]]  <- generate_sbw_weights(data_list[[i]], tols_new[[i]], targets, sigma2.y = 1, re = 0, 
+                                      max_iter = max_iter)
     if (any(sbw[[i]]$tols != tols_new[[i]])) {
       tols_new[[i]] <- sbw[[i]]$tols
     }
@@ -194,7 +197,7 @@ generate_weight_list <- function(tols, data_list, targets, distance,
   list(SBW = sbw, HSBW = hsbw, `BC-SBW` = debiased_sbw, `BC-HSBW` = debiased_hsbw)
 }
 
-# iterate weights across a list
+# iterate weights across a list 
 iterate_covariate_subsets <- function(data_list, tol_list, targets, distance, 
                                       stop_criterion = NULL, max_iter = 1e6) {
   map(tol_list, ~generate_weight_list(.x, data_list, targets, distance,

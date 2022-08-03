@@ -4,6 +4,7 @@
 # date modified: december 14, 2020
 
 # load libraries and data ------------------------------------------------------------------------------------
+#remotes::install_github("mrubinst757/optweight") # install modified version of optweight
 source("03_Analysis/01_calibrate-data.R")
 library(tidyverse)
 library(assertthat)
@@ -139,8 +140,8 @@ true_file  <- "../01_ProcessedData/cpuma-analytic-file-2009-2014-r0-r80-true.rds
 test_file  <- "../01_ProcessedData/cpuma-analytic-file-2009-2014-r0-r80-test.rds"
 valid_file <- "../01_ProcessedData/cpuma-analytic-file-2009-2014-r0-r80-valid.rds"
 
-varlist_true <- modify_variables(true_file, variables)
-varlist_test <- modify_variables(test_file, variables)
+varlist_true  <- modify_variables(true_file, variables)
+varlist_test  <- modify_variables(test_file, variables)
 varlist_valid <- modify_variables(valid_file, variables)
 
 data_true <- read_data(true_file) 
@@ -175,7 +176,6 @@ sigma_uu_i_valid <- list(treat_uu_i   = readRDS("../01_ProcessedData/sigma-uu-i-
 sigma_uu_i_valid_c2 <- list(treat_uu_i   = readRDS("../01_ProcessedData/sigma-uu-i-txonly--c2valid.rds"),
                             control_uu_i = readRDS("../01_ProcessedData/sigma-uu-i-ctonly--c2valid.rds"))
 
-
 all_true <- finalize_data(data_true, sigma_uu_i_true, varlist_true)
 all_true_c2 <- finalize_data(data_true_c2, sigma_uu_i_true_c2, varlist_true)
 all_test <- finalize_data(data_test, sigma_uu_i_test, varlist_test)
@@ -207,10 +207,6 @@ all_data_c2 <- readRDS("../01_ProcessedData/calibrated-data-c2.rds")
 ######################################################################################################
 ##################################### LEAVE ONE OUT DATASETS #########################################
 ######################################################################################################
-data_subset <- function(data_list, state_name) {
-  map(data_list, ~filter(.x, !state %in% state_name))
-}
-
 state_list <- append(list(c("")), as.list(unique(all_data$data[[1]]$state))) 
 names(state_list) <- c("Preferred", unique(all_data$data[[1]]$state))
 data_list <- map(state_list, ~data_subset(all_data$data, .x))
@@ -229,4 +225,5 @@ saveRDS(data_list, "../01_ProcessedData/calibrated-data-all-subsets-c2-all.rds")
 xhat.cor <- transform_correlated_data(data_true$treatment_data, 
                                       sigma_uu_i_true$treat_uu_i,
                                       variables)
-diag(cov(xhat.cor[ , variables])) - diag(cov(xhat.cor$treatment_data[ , variables])) #unsatisfactory
+
+diag(cov(xhat.cor[, variables])) - diag(cov(data_true$treatment_data[, variables])) #unsatisfactory

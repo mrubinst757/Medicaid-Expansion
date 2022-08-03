@@ -17,6 +17,7 @@ estimates <- function(data, variables, tols) {
   w1
 }
 
+# 2012-14 estimates using 2009-2011 training period
 comparison1 <- function(data, weight_result) {
   predict_oos <- function(tdat, weights) {
     map2(tdat, weights, ~mutate(.x, weights = .y$weights) %>%
@@ -30,6 +31,7 @@ comparison1 <- function(data, weight_result) {
   map(weight_result, ~predict_oos(tdat, .x))
 }
 
+# 2013-14 estimates using 2010-2012 training period
 comparison2 <- function(data, weight_result) {
   predict_oos <- function(tdat, weights) {
     map2(tdat, weights, ~mutate(.x, weights = .y$weights) %>%
@@ -43,6 +45,7 @@ comparison2 <- function(data, weight_result) {
   map(weight_result, ~predict_oos(tdat, .x))
 }
 
+# 2014 estimates using 2011-2013 training period (actual sample)
 comparison3 <- function(data, weight_result) {
   predict_oos <- function(tdat, weights) {
     map2(tdat, weights, ~mutate(.x, weights = .y$weights) %>%
@@ -56,6 +59,7 @@ comparison3 <- function(data, weight_result) {
   map(weight_result, ~predict_oos(tdat, .x))
 }
 
+# read variables for appropriate training period
 read_vars <- function(var_name) {
   read_csv("../02_Specs/tol_specs.csv") %>%
     filter(`Reference Variable` == 0) %>%
@@ -64,6 +68,7 @@ read_vars <- function(var_name) {
     sort()
 }
 
+# calculate estimation errors
 cov_errors <- function(data, weight_results, variables) {
   tdat <- data %>%
     map(~filter(.x, treatment == 1))
@@ -82,7 +87,7 @@ cov_errors <- function(data, weight_results, variables) {
     map(~cbind(.x, targets))
 }
 
-# set names ---------------------------------------------------------------------------------------
+# set parameters ---------------------------------------------------------------------------------------
 covariate_group <- c("Unadjusted")
 
 sigma_estimator <- c("sigma_uu_i", "sigma_uu_avg", "sigma_zero")
@@ -103,10 +108,8 @@ tol_list <- map(0, ~tol_list %>% mutate(`Base Tol` = if_else(grepl(.x, Group), 1
   map(~.x$`Base Tol`) %>%
   map(~set_names(.x, variables))
 
-tols1 <- tol_list[[1]]
-names(tols1) <- vars1
-tols2 <- tols1
-names(tols2) <- vars2
+tols1 <- tol_list[[1]]; names(tols1) <- vars1
+tols2 <- tols1; names(tols2) <- vars2
 
 imputed_dat_c1 <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
   unnest() %>%
@@ -138,24 +141,6 @@ tdat <- subset(dat1[[3]], treatment == 1)
 cdat.c2 <- subset(dat1.c2[[3]], treatment == 0)
 tdat.c2 <- subset(dat1.c2[[3]], treatment == 1)
 
-py <- c("hins_unins_pct_2009", "hins_unins_pct_2010",
-        "hins_unins_pct_2011", "hins_unins_pct_2012",
-        "hins_unins_pct_2013", "hins_unins_pct_2014")
-
-truth <- colMeans(cdat[, py])
-names(truth) <- c("2009", "2010", "2011", "2012", "2013", "2014")
-txtruth <- colMeans(tdat[, py])
-txtruth.c2 <- colMeans(tdat.c2[, py])
-
-trends_table <- round(rbind(truth, txtruth, txtruth.c2), 2) %>%
-  as_tibble() %>%
-  mutate(Treatment = c("Non-expansion", "Expansion (primary dataset)", "Expansion (early excluded)")) %>%
-  select(Treatment, everything())
-
-print(xtable::xtable(trends_table,caption = "Mean non-elderly adult uninsurance rates, 2009-2014"), 
-      type="latex", caption.placement = "top",
-      include.rownames = FALSE)
-
 # estimate GLS weights ---------------------------------------------------------
 CalculateGLSEsts <- function(data_list) {
   sigma <- as.numeric(table(data_list$data[[1]]$state[data_list$data[[1]]$treatment == 1]))
@@ -179,7 +164,7 @@ CalculateGLSEsts <- function(data_list) {
            OLS = map2(estimate.ols, outcomes.0, ~.x - .y),
            GLS = map2(estimate.gls, outcomes.0, ~.x - .y)) %>%
     select(key, set, OLS, GLS) %>% 
-    unnest() 
+    unnest(cols = c(OLS, GLS)) 
   
   return(res)
 }
@@ -264,6 +249,8 @@ fintab <- GenFinTab(tables_c1, gls.weights)
 fintab.c2 <- GenFinTab(tables_c2, gls.weights.c2)
 
 # output tables for paper ------------------------------------------------------
+
+# tables with individual error columns
 tot.tab <- fintab %>%
   left_join(
     fintab.c2 %>%
@@ -290,6 +277,7 @@ final <- tot.tab %>%
   ) %>%
   as_latex()
 
+# tables with average errors and RMSE as columns
 final.alt <- bind_cols(
   tot.tab %>%
     mutate(`Mean Error` = (`2012 error` + `2013 error`) / 2) %>%
@@ -352,6 +340,7 @@ final.alt.full.gt <- final.alt.full %>%
   ) %>%
   as_latex() 
 
+# order of rows by RMSE
 rmse.order <- fintab %>%
   filter(!Estimator %in% c("OLS", "GLS")) %>%
   mutate(order = paste(`Sigma estimate`, Estimator)) %>%
@@ -378,7 +367,6 @@ final.alt.gt %>%
 final.alt.full.gt %>%
   as.character() %>%
   cat()
-
 
 # additional plots -------------------------------------------------------------
 FullWeightPlot <- function(data, weight_list, adjustment_set) {
@@ -452,106 +440,6 @@ ggsave("../../02_Paper/01_Plots/weights-by-state-c1-all.png", weight.plot.c1,
        width = 10, height = 6, type = "cairo")
 ggsave("../../02_Paper/01_Plots/weights-by-state-c2-all.png", weight.plot.c2,
        width = 10, height = 6, type = "cairo")
-
-# additional investigations ----------------------------------------------------
-Y2013.1 <- imputed_dat_c1$data[[3]]$hins_unins_pct_2013[imputed_dat_c1$data[[3]]$treatment == 1]
-sbw     <- map(weights3$SBW, ~sum(.x$weights*Y2013.1)/sum(.x$weights)) %>% unlist()
-hsbw    <- map(weights3$HSBW, ~sum(.x$weights*Y2013.1)/sum(.x$weights)) %>% unlist()
-bc.sbw   <- map(weights3$`BC-SBW`, ~sum(.x$weights*Y2013.1)/sum(.x$weights)) %>% unlist()
-bc.hsbw  <- map(weights3$`BC-HSBW`, ~sum(.x$weights*Y2013.1)/sum(.x$weights)) %>% unlist()
-
-dat <- imputed_dat_c1$data[[3]] %>%
-  filter(treatment == 1) %>%
-  select(cpuma, state, J_2013 = hins_unins_pct_2013, J_2014 = hins_unins_pct_2014) %>%
-  mutate(
-    sbw_2014_hom = weights3$SBW[[2]]$weights,
-    sbw_2014_non = weights3$SBW[[3]]$weights,
-    sbw_2013_hom = weights2$SBW[[2]]$weights,
-    sbw_2013_non = weights2$SBW[[3]]$weights,
-    bc.sbw_2014_hom = weights3$`BC-SBW`[[3]]$weights,
-    bc.sbw_2014_non = weights3$`BC-SBW`[[2]]$weights,
-    bc.sbw_2013_hom = weights2$`BC-SBW`[[3]]$weights,
-    bc.sbw_2013_non = weights2$`BC-SBW`[[2]]$weights
-  ) 
-
-dat %>%
-  group_by(state) %>%
-  mutate(np = n()/nrow(.)) %>%
-  ungroup() %>%
-  gather(weights, weight_value, sbw_2014_hom:bc.sbw_2013_non) %>%
-  mutate(extrap = ifelse(weight_value < 0, 1, 0)) %>%
-  filter(extrap == 1) %>%
-  group_by(weights) %>%
-  mutate(weight_value = weight_value/sum(weight_value)) %>%
-  group_by(weights, extrap, state, np) %>%
-  summarize(weight_value = sum(weight_value)) %>%
-  filter(extrap == 1, weights == "bc.sbw_2014_hom") %>%
-  arrange(-weight_value)
-
-dat.c2 <- imputed_dat_c2$data[[3]] %>%
-  filter(treatment == 1) %>%
-  select(cpuma, state, J_2013 = hins_unins_pct_2013, J_2014 = hins_unins_pct_2014) %>%
-  mutate(
-    sbw_2014_hom = weights3.c2$SBW[[2]]$weights,
-    sbw_2014_non = weights3.c2$SBW[[3]]$weights,
-    sbw_2013_hom = weights2.c2$SBW[[2]]$weights,
-    sbw_2013_non = weights2.c2$SBW[[3]]$weights,
-    bc.sbw_2014_hom = weights3.c2$`BC-SBW`[[3]]$weights,
-    bc.sbw_2014_non = weights3.c2$`BC-SBW`[[2]]$weights,
-    bc.sbw_2013_hom = weights2.c2$`BC-SBW`[[3]]$weights,
-    bc.sbw_2013_non = weights2.c2$`BC-SBW`[[2]]$weights
-  ) 
-
-itab.1 <- map(tables_c1, ~.x %>%
-            select(sigma_estimate, estimator, txfx_2014 = p14)) %>%
-  map2(c("2009-2011", "2010-2012", "2011-2013"), ~mutate(.x, covariates = .y)) %>%
-  invoke(rbind, .) %>%
-  spread(covariates, txfx_2014) %>%
-  arrange(rev(estimator)) %>%
-  mutate_at("sigma_estimate", ~stringr::str_replace_all(.,
-                                                        c("sigma_uu_avg" = "Homogeneous",
-                                                          "sigma_uu_i"   = "Heterogeneous",
-                                                          "sigma_zero"   = "Unadjusted"))) %>%
-  rename(Adjustment = sigma_estimate, Estimator = estimator) %>%
-  mutate(order = paste(Adjustment, Estimator)) %>%
-  mutate_at("order", ~factor(., levels = rmse.order)) %>%
-  arrange(order) %>%
-  select(-order)
-
-itab.1.c2 <- map(tables_c2, ~.x %>%
-                select(sigma_estimate, estimator, txfx_2014 = p14)) %>%
-  map2(c("2009-2011", "2010-2012", "2011-2013"), ~mutate(.x, covariates = .y)) %>%
-  invoke(rbind, .) %>%
-  spread(covariates, txfx_2014) %>%
-  arrange(rev(estimator)) %>%
-  mutate_at("sigma_estimate", ~stringr::str_replace_all(.,
-                                                        c("sigma_uu_avg" = "Homogeneous",
-                                                          "sigma_uu_i"   = "Heterogeneous",
-                                                          "sigma_zero"   = "Unadjusted"))) %>%
-  rename(Adjustment = sigma_estimate, Estimator = estimator) %>%
-  mutate(order = paste(Adjustment, Estimator)) %>%
-  mutate_at("order", ~factor(., levels = rmse.order.c2)) %>%
-  arrange(order) %>%
-  select(-order)
-
-itab.2 <- tibble(
-  Adjustment = rep(c("Heterogeneous", "Homogeneous", "Unadjusted"), 4),
-  Estimator = rep(c("SBW", "H-SBW", "BC-SBW", "BC-HSBW"), each = 3),
-  `J2013*gamma` = c(sbw, hsbw, bc.sbw, bc.hsbw),
-  Target = truth[["2013"]]
-) %>%
-  mutate(order = paste(Adjustment, Estimator)) %>%
-  mutate_at("order", ~factor(., levels = rmse.order)) %>%
-  arrange(order) %>%
-  select(-order)
-
-print(xtable(itab.1,caption = "J_2014*gamma for all years"), 
-      type="latex", caption.placement = "top",
-      include.rownames = FALSE)
-
-print(xtable(itab.2 ,caption = "J_2013*gamma_2014"), 
-      type="latex", caption.placement = "top",
-      include.rownames = FALSE)
 
 # QA check: verify weights equal to primary results
 c1_results <- readRDS("../04_Output/c1-results.rds") 

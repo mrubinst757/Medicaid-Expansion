@@ -67,7 +67,6 @@ total_etc <- balance_etc_c1 %>%
               select(-contains("weighted"))) %>%
   mutate_at("Variables", ~stringr::str_replace_all(., var_names))
 
-
 balance_etc_c1 %>%
   mutate_if(is.numeric, ~(ifelse(abs(.) > 0.1, 1, 0))) %>%
   summarize_if(is.numeric, sum)

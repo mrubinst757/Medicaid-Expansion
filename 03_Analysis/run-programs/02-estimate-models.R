@@ -21,20 +21,19 @@ variables <- read_csv("../02_Specs/tol_specs.csv") %>%
 
 targets <- colMeans(cdata[variables])
 
-tol_list <- read_csv("../02_Specs/tol_specs.csv") 
+tol_list <- read_csv("../02_Specs/tol_specs.csv") %>%
+  filter(Variable %in% variables) %>%
+  arrange(Variable) %>%
+  .$`Base Tol` %>%
+  set_names(variables)
+  
+tol_list <- list(tol_list)
 
-tol_list <- map(0:5, ~tol_list %>% mutate(`Base Tol` = if_else(grepl(.x, Group), 100, `Base Tol`))) %>%
-  map(~filter(.x, Variable %in% variables)) %>%
-  map(~arrange(.x, Variable)) %>%
-  map(~.x$`Base Tol`) %>%
-  map(~set_names(.x, variables))
-
-cov_groups <- c("None", "Republican", "Unins & Unemp", "Urb-Age-Educ-Cit-Mar-Stu-Dis-F",
-                "Race-Eth-For-Inc-Pov", "Child-PGrowth-HHRatio")
+cov_groups  <- c("None")
 
 model_names <- c("SBW", "H-SBW", "BC-SBW", "BC-HSBW")
 
-cov_models <- c("sigma_uu_i_modeled", "sigma_uu_avg", "sigma_zero")
+cov_models  <- c("sigma_uu_i_modeled", "sigma_uu_avg", "sigma_zero")
 
 # helper fun to set names of list of list of lists
 set_cov_mod_name <- function(result_list) {

@@ -9,19 +9,41 @@ library(Hmisc)
 library(corrplot)
 library(RColorBrewer)
 
-# helper funs ------------------------------------------------------------------
+varnames <- read_csv("../02_Specs/codebook.csv") %>%
+  filter(Pct == 1)
+var_names <- varnames$`Variable Name`
+names(var_names) <- varnames$Variable
+
+c1_data_all <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
+  unnest() %>%
+  nest(-key, -set) %>%
+  .$data %>%
+  map(~arrange(.x, state, cpuma))
+
+c1_jackknife <- readRDS("../04_Output/etc-jackknife-c1.rds")
+
+c2_jackknife <- readRDS("../04_Output/etc-jackknife-c2.rds")
+
 read_vars <- function(col_name) {
-  read_csv('../02_Specs/tol_specs.csv') %>%
-    mutate(`Reference Variable` = case_when(grepl('child', Variable) ~ 0, TRUE ~ `Reference Variable`)) %>%
+  read_csv("../02_Specs/tol_specs.csv") %>%
+    mutate(`Reference Variable` = case_when(grepl("child", Variable) ~ 0, TRUE ~ `Reference Variable`)) %>%
     filter(`Reference Variable` == 0) %>%
     .[[col_name]] %>%
     sort()
 }
 
+variables  <- read_vars("Variable")
+vars_test  <- read_vars("var_test")
+vars_valid <- read_vars("var_valid")
+
+# helper funs --------------------------------------------------------------------------------------------
+
+# calculate range of a variable
 my_range <- function(x) {
   range(x)[2] - range(x)[1]
 }
 
+# produce summary statistics table
 produce_tables <- function(data_list, variables) {
   summary_table <- map(data_list, ~.x %>%
                          select(treatment, all_of(variables)) %>%
@@ -48,7 +70,7 @@ produce_tables <- function(data_list, variables) {
     spread(sigma_estimate, `(mean, sd)`) %>%
     arrange(key) %>%
     select(Treatment = treatment, Variable = key,
-           `Unadjusted` = sigma_zero, 
+           `No adjustment` = sigma_zero, 
            `Heterogeneous` = sigma_uu_i, 
            `Homogeneous` = sigma_uu_avg) 
   
@@ -65,10 +87,7 @@ produce_tables <- function(data_list, variables) {
   ptab1 <- paper_summary_table %>%
     spread(sigma_estimate, sd) %>%
     filter(treatment == 1) %>%
-    select(Variable = variable, 
-           Unadjusted = sigma_zero, 
-           Heterogeneous = sigma_uu_i, 
-           Homogeneous   = sigma_uu_avg) %>%
+    select(Variable = variable, `No adjustment` = sigma_zero, `Preferred` = sigma_uu_i, `Secondary` = sigma_uu_avg) %>%
     mutate_at("Variable", ~stringr::str_replace_all(., var_names))
   
   # calculate extreme value table ---------------------------------------------------------------------------
@@ -100,75 +119,30 @@ produce_tables <- function(data_list, variables) {
                          filter(!grepl("repub|urban", key)) %>%
                          spread(treatment, mean_support)) %>%
     map2(c("sigma_uu_i", "sigma_uu_avg", "sigma_zero"), ~mutate(.x, sigma_estimator = .y)) %>%
-    invoke(rbind, .) 
-  
-  support_table_small <- support_table %>%
-    mutate(Counts = `1`) %>%
-    select(-`0`, -`1`) %>%
-    spread(sigma_estimator, Counts) %>%
-    select(Variables = key, 
-           Heterogeneous = sigma_uu_i, 
-           Homogeneous = sigma_uu_avg) %>%
-    mutate_at("Variables", ~stringr::str_replace_all(., var_names))
-  
-  support_table <- support_table %>%
+    invoke(rbind, .) %>%
     mutate(`Counts (control, treatment)` = paste0("(", `0`, ", ", `1`, ")")) %>%
     select(-`0`, -`1`) %>%
     spread(sigma_estimator, `Counts (control, treatment)`) %>%
-    select(Variables = key, 
-           Heterogeneous = sigma_uu_i, 
-           Homogeneous = sigma_uu_avg) %>%
+    select(Variables = key, `Heterogeneous adjustment` = sigma_uu_i, 
+           `Homogeneous adjustment` = sigma_uu_avg) %>%
     mutate_at("Variables", ~stringr::str_replace_all(., var_names))
   
   ptab2 <- paper_summary_table %>%
     spread(sigma_estimate, sd) %>%
     filter(treatment == 0) %>%
-    select(Variable = variable, 
-           Unadjusted = sigma_zero, 
-           Homogeneous = sigma_uu_avg, 
-           Heterogeneous = sigma_uu_i) %>%
+    select(Variable = variable, `No adjustment` = sigma_zero, `Preferred` = sigma_uu_i, `Secondary` = sigma_uu_avg) %>%
     mutate_at("Variable", ~stringr::str_replace_all(., var_names))
   
   list(final_table = final_table, support_table = support_table, 
-       support_table_small = support_table_small,
        ptab1 = ptab1, ptab2 = ptab2)
 }
 
-# read files -------------------------------------------------------------------
-varnames <- read_csv("../02_Specs/codebook.csv") %>%
-  filter(Pct == 1)
-var_names <- varnames$`Variable Name`
-names(var_names) <- varnames$Variable
-
-c1_data_all <- readRDS("../01_ProcessedData/calibrated-data-all.rds") %>%
-  unnest() %>%
-  nest(-key, -set) %>%
-  .$data %>%
-  map(~arrange(.x, state, cpuma))
-
-c1_jackknife <- readRDS("../04_Output/etc-jackknife-c1.rds")
-
-c2_jackknife <- readRDS("../04_Output/etc-jackknife-c2.rds")
-
-nh.index.c1 <- grep("NH", names(c1_jackknife$data))
-nh.index.c2 <- grep("NH", names(c2_jackknife$data))
-
-c1_jackknife <- c1_jackknife %>%
-  map(~.x[-nh.index.c1])
-
-c2_jackknife <- c2_jackknife %>%
-  map(~.x[-nh.index.c2])
-
-variables <- read_vars("Variable")
-vars_test <- read_vars("var_test")
-vars_valid <- read_vars("var_valid")
-
-# calculate summary statistics ---------------------------------------------------------------------------
+# create tables ---------------------------------------------------------------------------
 tables <- produce_tables(c1_data_all[1:3], variables)
 tables_valid <- produce_tables(c1_data_all[7:9], variables)
 tables_test <- produce_tables(c1_data_all[4:6], variables)
 
-jtab <- tables$ptab1 %>%
+jtab1 <- tables$ptab1 %>%
   filter(!grepl("2009|2010", Variable))  %>%
   mutate_at("Variable", ~stringr::str_replace_all(., var_names))
 
@@ -176,7 +150,7 @@ jtab2 <- tables$ptab2 %>%
   filter(!grepl("2009|2010", Variable)) %>%
   mutate_at("Variable", ~stringr::str_replace_all(., var_names))
 
-print(xtable::xtable(jtab, digits = 2), include.rownames = FALSE,
+print(xtable::xtable(jtab1, digits = 2), include.rownames = FALSE,
       latex.environments = NULL, 
       booktabs = TRUE)
 
@@ -184,15 +158,11 @@ print(xtable::xtable(jtab2, digits = 2), include.rownames = FALSE,
       latex.environments = NULL, 
       booktabs = TRUE)
 
-fin <- tables$final_table %>%
-  filter(Treatment == 1) %>%
-  select(-Treatment) 
-
-print(xtable::xtable(fin, digits = 0), include.rownames = FALSE,
+print(xtable::xtable(tables$final_table, digits = 0), include.rownames = FALSE,
       latex.environments = NULL, 
       booktabs = TRUE)
 
-print(xtable::xtable(tables$support_table_small, digits = 0), include.rownames = FALSE,
+print(xtable::xtable(tables$support_table, digits = 0), include.rownames = FALSE,
       latex.environments = NULL, 
       booktabs = TRUE)
 
@@ -206,27 +176,23 @@ print(xtable::xtable(tables$ptab2, digits = 2), include.rownames = FALSE,
 
 # create correlation matrix ------------------------------------------------------------------------
 c1_data_all <- map(c1_data_all, ~set_names(., stringr::str_replace_all(names(.), var_names)))
-cor1 <- cor(c1_data_all[[1]][var_names])
-cor2 <- cor(c1_data_all[[2]][var_names])
-cor3 <- cor(c1_data_all[[3]][var_names])
 
-plot1 <- corrplot(cor1, order = 'original', type = "lower", tl.pos = 'ld',
-                  tl.cex = 0.75, tl.col = "black", tl.srt = 0.001)
+cor1 <- cor(c1_data_all[[3]][var_names])
 
-plot2 <- corrplot(cor2, order = 'original', type = "lower", tl.pos = 'ld',
-                  tl.cex = 0.75, tl.col = "black", tl.srt = 0.001)
+corrplot(cor1, order = "original", type = "lower", tl.pos = "ld",
+         tl.cex = 0.75, tl.col = "black", tl.srt = 0.001)
 
-plot3 <- corrplot(cor3, order = 'original', type = "lower", tl.pos = 'ld',
+plot1 <- corrplot(cor1, order = "original", type = "lower", tl.pos = "ld",
                   tl.cex = 0.75, tl.col = "black", tl.srt = 0.001)
 
 file_path <- "../../02_Paper/01_Plots/correlation-plot-c1-sigma-zero.png"
 png(height = 1600, width = 1600, file = file_path, type = "cairo")
-corrplot(cor3, order = 'original', type = "lower", tl.pos = 'ld',
+corrplot(cor3, order = "original", type = "lower", tl.pos = "ld",
          tl.cex = 2, tl.col = "black", tl.srt = 0.001, cl.cex = 2)
 dev.off()
 
 # variable-delta table for appendix -----------------------------------------------------
-tol_list <- read_csv('../02_Specs/tol_specs.csv') 
+tol_list <- read_csv("../02_Specs/tol_specs.csv") 
 
 tol_table <- tol_list %>%
   select(Variable, `Delta` = `Base Tol`) %>%
@@ -237,38 +203,19 @@ print(xtable::xtable(tol_table, digits = 2), include.rownames = FALSE,
       latex.environments = NULL, 
       booktabs = TRUE)
 
-# treatment assignment tables ------------------------------------------------------------
-orig <- read_rds("../01_ProcessedData/cpuma-analytic-file-2009-2014-r0-r80-test.rds")
+# state-treatment assignment table -----------------------------------------------------
+excluded <- state.abb[!state.abb %in% unique(c1_data_all[[1]]$state)]
+primary.1  <- unique(c1_data_all[[1]]$state[c1_data_all[[1]]$`Expansion State` == 1])
+primary.0  <- unique(c1_data_all[[1]]$state[c1_data_all[[1]]$`Expansion State` == 0])
+early.1 <- names(c2_jackknife$data)
 
-treatment_table <- orig[[1]] %>%
-  mutate(`State Full` = usdata::abbr2state(state)) %>%
-  group_by(`State Full`, State = state, Treatment = treatment) %>%
-  dplyr::summarize(`Number CPUMAs` = n()) %>%
-  mutate_at("Treatment", ~stringr::str_replace_all(., c("0" = "Non-expansion",
-                                                     "1" = "Expansion",
-                                                     "2" = "Excluded"))) %>%
-  mutate(`Early Expansion` = ifelse(grepl("CA|CT|MN|NJ|WA", State), "Yes", "No")) %>%
-  arrange(Treatment, `Early Expansion`)
+paste0(primary.0, collapse =  ", ")
 
-print(xtable::xtable(treatment_table, digits = 2), include.rownames = FALSE,
-      latex.environments = NULL, 
-      booktabs = TRUE)
+state.table <- tibble(
+  `Treated states (primary)` = paste0(primary.1, collapse =  ", "),
+  `Control states (primary)` = paste0(primary.0, collapse =  ", "),
+  `Treated states (early expansion excluded)` = paste0(early.1, collapse =  ", "),
+  `Always excluded` = paste0(c(excluded, "DC"), collapse =  ", ")
+) 
 
-# other investigations ---------------------------------------------------------
-tables$ptab1 %>%
-  filter(!grepl("2009|2010", Variable))
-
-tables_test$ptab1 %>%
-  filter(!grepl("2009|2013", Variable))
-
-tables_valid$ptab1 %>%
-  filter(!grepl("201[2-3]", Variable))
-
-tables$ptab2 %>%
-  filter(!grepl("2009|2010", Variable))
-
-tables_test$ptab2 %>%
-  filter(!grepl("2009|2013", Variable))
-
-tables_valid$ptab2 %>%
-  filter(!grepl("201[2-3]", Variable))
+print(xtable::xtable(state.table), include.rownames = FALSE)

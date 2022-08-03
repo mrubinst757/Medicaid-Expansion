@@ -1,4 +1,4 @@
-source("03_Analysis/06_variance-simulations.R")
+source("03_Analysis/06_simulations.R")
 
 ################################################################################
 ########################## process and plot results ############################
@@ -13,19 +13,14 @@ simulation_parameters <- expand.grid(
   SNR.xw = c(0.95, 0.9, 0.85),
   rho = 0.25,
   sample_states = 25,
-  num_sims = 500
+  num_sims = 1000
 )
 
 all_sims <- pmap(simulation_parameters, RunSims)
 saveRDS(all_sims, "../04_Output/simulations-05-06-22.rds")
 
 # create plots summarizing results ---------------------------------------------
-all_sims <- readRDS("../04_Output/simulations-12-26-21.rds")
-all_sims2 <- readRDS("../04_Output/simulations-12-26-21-p2.rds")
-all_sims3 <- readRDS("../04_Output/simulations-05-06-22.rds")
-
-all_sims <- map2(all_sims, all_sims2, ~append(.x, .y))
-all_sims <- map2(all_sims, all_sims3, ~append(.x, .y))
+all_sims <- readRDS("../04_Output/simulations-05-06-22.rds")
 
 sim_performance <- all_sims %>%
   map(~invoke(rbind, .)) %>%
@@ -143,11 +138,12 @@ simulation_parameters_x <- expand.grid(
   X_cor = 0.25,
   SNR.xw = 1,
   rho = c(0, 0.25, 0.5, 0.75, 0.99),
-  num_sims = 1
+  num_sims = 1000
 )
 
-#all_sims_X <- pmap(simulation_parameters_x, RunSimsX)
-#saveRDS(all_sims_X, "../04_Output/simulations-x-12-27-21.rds")
+all_sims_X <- pmap(simulation_parameters_x, RunSimsX)
+
+saveRDS(all_sims_X, "../04_Output/simulations-x-12-27-21.rds")
 
 all_sims_X <- readRDS("../04_Output/simulations-x-12-27-21.rds") %>%
   map(~invoke(rbind, .)) %>%
@@ -212,8 +208,8 @@ ggsave("../../02_Paper/01_Plots/variance-x-bias-plot.png", variance.x.bias.plot)
 cor.dat <- GenerateHierPopulation(number_states = 10000, SS_cor = 0.5, SNR.xw = 0.85,
                                   hetero = TRUE, rho = 0.25, X_cor = 0.25)
 
-
 cor.sims <- map(c(25, 50, 100, 200), ~RunCorSims(cor.dat, .x, nsims = 500))
+
 cor.sims <- readRDS("../04_Output/xhat-cor.rds")
 
 map(cor.sims, ~invoke(rbind, .)) %>%

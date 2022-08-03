@@ -1,6 +1,7 @@
 library(tidyverse)
 library(optweight)
 
+# Generate hierarchical dataset
 GenerateHierPopulation <- function(number_states, SS_cor, SNR.xw, 
                                    rho, X_cor, var.y = 2, var.x = 2, hetero = TRUE) {
   
@@ -103,6 +104,7 @@ GenerateHierPopulation <- function(number_states, SS_cor, SNR.xw,
               SigmaV = SigmaV))
 }
 
+# Calculate Sigma_S (within state correlations)
 CalcSigSS <- function(data) {
   blocks <- as.numeric(table(data$id))
   finish <- cumsum(blocks)
@@ -121,6 +123,7 @@ CalcSigSS <- function(data) {
   return(SigmaSS_list)
 }
 
+# Calculate E[X | W] using specified adjustment
 CalcXhat <- function(data, estimate = "Truth", cor.mat.x = NULL, cor.mat.w = NULL,
                      SigmaSS = NULL, Sigma_vv_est) {
   
@@ -212,6 +215,7 @@ CalcXhat <- function(data, estimate = "Truth", cor.mat.x = NULL, cor.mat.w = NUL
   return(data)
 }
 
+# Calculate SBW weights
 EstimateSBW <- function(balance_variable, data, target, re_spec) {
   Zs <- paste0(sprintf("Z%s", 1:length(target)), collapse = "+")
   formula_string <- paste0("~ ", Zs)
@@ -224,6 +228,7 @@ EstimateSBW <- function(balance_variable, data, target, re_spec) {
   return(model$weights)
 }
 
+# Run simulations
 SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE, x.only = FALSE) {
   
   popdat <- population$data
@@ -369,7 +374,7 @@ SimulationHSBW <- function(population, sample_states, jackknife_varest = TRUE, x
   return(res)
 }
 
-# finish editing this
+# simulations for known X
 SimulationHSBW.xonly <- function(population, sample_states, jackknife_varest = TRUE) {
   
   popdat <- population$data
@@ -399,7 +404,7 @@ SimulationHSBW.xonly <- function(population, sample_states, jackknife_varest = T
   
   target <- c(1, 1, 1)
   
-  weights.x         <- map(re_list, ~EstimateSBW("X", data, target, .x))
+  weights.x <- map(re_list, ~EstimateSBW("X", data, target, .x))
 
   GenEsts <- function(data, weights.x) {
     if (!is.data.frame(data)) {
@@ -447,6 +452,7 @@ SimulationHSBW.xonly <- function(population, sample_states, jackknife_varest = T
   return(res)
 }
 
+# correlated adjustment simulation
 SimulationHSBW.cor <- function(population, sample_states) {
   
   popdat <- population$data
@@ -535,6 +541,7 @@ SimulationHSBW.cor <- function(population, sample_states) {
   return(res)
 }
 
+# jackknife variance estimates
 Jackknife <- function(data, estimate_df, target, jackest, cor.mat.w, cor.mat.x, 
                       SigmaSS_list, Sigma_vv_est, estimate = NULL, x.only = FALSE) {
   
@@ -621,6 +628,7 @@ Jackknife <- function(data, estimate_df, target, jackest, cor.mat.w, cor.mat.x,
   return(res)
 }
 
+# run simulations
 RunSims <- function(num_sims, pop_size, sample_states, X_cor, SNR.xw, rho, SS_cor, hetero) {
   population <- GenerateHierPopulation(number_states = pop_size, 
                                        X_cor = X_cor, 
@@ -633,7 +641,7 @@ RunSims <- function(num_sims, pop_size, sample_states, X_cor, SNR.xw, rho, SS_co
   return(sim)
 }
 
-
+# run simulations where X is known
 RunSimsX <- function(num_sims, pop_size, sample_states, X_cor, SNR.xw, rho, SS_cor, hetero) {
   population <- GenerateHierPopulation(number_states = pop_size, 
                                        X_cor = X_cor, 
@@ -647,6 +655,7 @@ RunSimsX <- function(num_sims, pop_size, sample_states, X_cor, SNR.xw, rho, SS_c
   return(sim)
 }
 
+# run simulations for correlated adjustment
 RunCorSims <- function(population, num_states, nsims) {
   res <- map(1:nsims, ~SimulationHSBW.cor(population, num_states))
   return(res)

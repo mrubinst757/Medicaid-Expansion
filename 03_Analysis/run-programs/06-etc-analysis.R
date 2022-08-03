@@ -23,8 +23,7 @@ c1_jackknife <- readRDS("../04_Output/etc-jackknife-c1.rds")
 c2_jackknife <- readRDS("../04_Output/etc-jackknife-c2.rds")
 
 # set names ---------------------------------------------------------------------------------------
-covariate_group <- c("None", "Republican", "Unins & Unemp", "Urb-Age-Educ-Cit-Mar-Stu-Dis-F",
-                     "Race-Eth-For-Inc-Pov", "Child-PGrowth-HHRatio")
+covariate_group <- c("None")
 
 sigma_estimator <- c("sigma_uu_avg", "sigma_uu_i", "sigma_zero")
 
@@ -45,6 +44,7 @@ cdat <- imputed_dat_c1$data[[6]]
 tdat <- imputed_dat_c1$data[[3]]
 
 targets <- colMeans(cdat[variables])
+targets_ett <- colMeans(tdat[variables])
 
 c1_jackknife$data <- map(c1_jackknife$data, ~.x$data)
 c2_jackknife$data <- map(c2_jackknife$data, ~.x$data)
@@ -182,6 +182,26 @@ print(xtable::xtable(tables_v1$c2_confint_filtered),
 print(xtable(tables_v1$c2_point_estimate),
       digits = c(0, 0, 0, rep(2, 4)), 
       latex.environments = NULL, booktabs = TRUE, include.rownames = FALSE)
+
+# calculate pre-treatment trends -----------------------------------------------
+py <- c("hins_unins_pct_2009", "hins_unins_pct_2010",
+        "hins_unins_pct_2011", "hins_unins_pct_2012",
+        "hins_unins_pct_2013", "hins_unins_pct_2014")
+
+truth <- colMeans(cdat[, py])
+names(truth) <- c("2009", "2010", "2011", "2012", "2013", "2014")
+txtruth <- colMeans(tdat[, py])
+tdat.c2 <- filter(tdat, !state %in% c("CA", "CT", "MN", "NJ", "WA"))
+txtruth.c2 <- colMeans(tdat.c2[, py])
+
+trends_table <- round(rbind(truth, txtruth, txtruth.c2), 2) %>%
+  as_tibble() %>%
+  mutate(Treatment = c("Non-expansion", "Expansion (primary dataset)", "Expansion (early excluded)")) %>%
+  select(Treatment, everything())
+
+print(xtable::xtable(trends_table, caption = "Mean non-elderly adult uninsurance rates, 2009-2014"), 
+      type="latex", caption.placement = "top",
+      include.rownames = FALSE)
 
 # check convergence --------------------------------------------------------------------------
 check_status <- function(result_list, weight_type, sigma_type) {
